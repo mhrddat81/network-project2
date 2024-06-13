@@ -1,21 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tic Tac Toe - Register</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="register-section" class="auth-section">
-        <div class="form-container">
-            <h2>Register</h2>
-            <input type="text" id="register-username" placeholder="Username" required>
-            <input type="password" id="register-password" placeholder="Password" required>
-            <button onclick="register()">Register</button>
-            <p>Already have an account? <a href="login.html">Login</a></p>
-        </div>
-    </div>
+  <header>
+    <h1>Tic Tac Toe</h1>
+  </header>
+  <main>
+    <h2>Register</h2>
+    <form id="register-form">
+      <label for="username">Username:</label>
+      <input type="text" id="username" name="username" required>
+      <label for="password">Password:</label>
+      <input type="password" id="password" name="password" required>
+      <!-- <label for="confirm-password">Confirm Password:</label>
+      <input type="password" id="confirm-password" name="confirm-password" required> -->
+      <button type="submit">Register</button>
+    </form>
+    <a href="login.html" id="register-button">Login</a>
+    <div id="register-message"></div>
+  </main>
+  <script src="script.js"></script>
 </body>
-<script src="script.js"></script>
 </html>

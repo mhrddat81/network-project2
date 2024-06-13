@@ -1,37 +1,71 @@
-function showRegisterForm() {
-    document.getElementById('login-form').classList.add('hidden');
-    document.getElementById('register-form').classList.remove('hidden');
-}
+const loginForm = document.getElementById('login-form');
+const registerForm = document.getElementById('register-form');
+const loginMessage = document.getElementById('login-message');
+const registerMessage = document.getElementById('register-message');
 
-function showLoginForm() {
-    document.getElementById('login-form').classList.remove('hidden');
-    document.getElementById('register-form').classList.add('hidden');
-}
+// Login form submission handling
+loginForm.addEventListener('submit', (event) => {
+  event.preventDefault();
 
-function login() {
-    const username = document.getElementById('login-username').value;
-    const password = document.getElementById('login-password').value;
-    // Here you would add your authentication logic
-    if (username && password) {
-        window.location.href = 'game-lobby.html';
-    }
-}
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
 
-function register() {
-    const username = document.getElementById('register-username').value;
-    const password = document.getElementById('register-password').value;
-    // Here you would add your registration logic
-    if (username && password) {
-        window.location.href = 'game-lobby.html';
-    }
-}
+  // Send login request to Flask route using AJAX
+  fetch('/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ username, password })
+  })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Redirect to game lobby on successful login
+        window.location.href = '/lobby';
+      } else {
+        loginMessage.textContent = data.message;
+      }
+    })
+    .catch(error => {
+      console.error(error);
+      loginMessage.textContent = 'An error occurred. Please try again.';
+    });
+});
 
-function startGame(playerName) {
-    window.location.href = 'game.html';
-}
+// Registration form submission handling
+registerForm.addEventListener('submit', (event) => {
+  event.preventDefault();
 
-function makeMove(cell) {
-    if (!cell.textContent) {
-        cell.textContent = 'X'; // For now, we are just marking 'X'. Later, we will add game logic.
-    }
-}
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+  const confirmPassword = document.getElementById('confirm-password').value;
+
+  // Validation (check if passwords match, etc.)
+  if (password !== confirmPassword) {
+    registerMessage.textContent = 'Passwords do not match.';
+    return; // Prevent further processing if validation fails
+  }
+
+  // Send registration request to Flask route using AJAX
+  fetch('/register', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ username, password })
+  })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Handle successful registration (e.g., display success message, redirect to login)
+        registerMessage.textContent = 'Registration successful! Please log in.';
+      } else {
+        registerMessage.textContent = data.message;
+      }
+    })
+    .catch(error => {
+      console.error(error);
+      registerMessage.textContent = 'An error occurred. Please try again.';
+    });
+});
