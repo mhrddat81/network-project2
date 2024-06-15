@@ -2,6 +2,8 @@ const express = require('express');
 const mysql = require('mysql2');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
+const session = require('express-session');
+const cookieParser = require('cookie-parser');
 const path = require('path');
 const app = express();
 const port = 3000;
@@ -25,6 +27,15 @@ db.connect((err) => {
 // Middleware
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
+app.use(cookieParser());
+app.use(session({
+  secret: 'your_secret_key', // Replace with a random string for security
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 24 * 60 * 60 * 1000, // 1 day
+  }
+}));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
@@ -33,8 +44,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/register', (req, res) => {
-  const username = req.body.username;
-  const password = req.body.password;
+  const { username, password } = req.body;
 
   console.log('Register request received:', username);
 
@@ -66,8 +76,7 @@ app.post('/register', (req, res) => {
 });
 
 app.post('/login', (req, res) => {
-  const username = req.body.username;
-  const password = req.body.password;
+  const { username, password } = req.body;
 
   console.log('Login request received:', username);
 
@@ -91,9 +100,36 @@ app.post('/login', (req, res) => {
         console.log('Invalid password for user:', username);
         return res.status(400).send('Invalid password');
       }
+      
+      // Store user data in session
+      req.session.user = {
+        id: user.id,
+        username: user.username
+      };
       console.log('User logged in successfully:', username);
       res.status(200).send('User logged in');
     });
+  });
+});
+
+// Protected route - Game lobby
+app.get('/game_lobby', (req, res) => {
+  if (!req.session.user) {
+    return res.redirect('/');
+  }
+
+  const { username } = req.session.user;
+  res.sendFile(path.join(__dirname, 'public', 'game_lobby.html'));
+});
+
+// Logout route
+app.get('/logout', (req, res) => {
+  req.session.destroy(err => {
+    if (err) {
+      console.error('Error destroying session:', err);
+      return res.status(500).send('Server error');
+    }
+    res.redirect('/');
   });
 });
 
