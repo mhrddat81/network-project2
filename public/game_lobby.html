@@ -11,6 +11,11 @@
     <div id="userList">
         <!-- Usernames will be dynamically added here -->
     </div>
+    <div id="matchRequest" style="display: none;">
+        <p id="matchRequestMessage"></p>
+        <button id="acceptMatchRequest">Accept</button>
+        <button id="rejectMatchRequest">Reject</button>
+    </div>
     
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -34,7 +39,7 @@
                     const usernameElement = document.createElement('div');
                     usernameElement.textContent = user.username;
                     usernameElement.addEventListener('click', () => {
-                        alert('Bingo!');
+                        socket.emit('sendMatchRequest', { from: username, to: user.username });
                     });
                     userList.appendChild(usernameElement);
                 }
@@ -49,6 +54,36 @@
         // Handle logout event from server
         socket.on('logout', () => {
             window.location.href = '/';
+        });
+
+        // Handle receiving match request
+        socket.on('receiveMatchRequest', (data) => {
+            const { from } = data;
+            const matchRequestDiv = document.getElementById('matchRequest');
+            const matchRequestMessage = document.getElementById('matchRequestMessage');
+            matchRequestMessage.textContent = `Match request from ${from}`;
+            matchRequestDiv.style.display = 'block';
+
+            document.getElementById('acceptMatchRequest').onclick = () => {
+                socket.emit('respondMatchRequest', { from, to: username, response: 'accepted' });
+                matchRequestDiv.style.display = 'none';
+            };
+
+            document.getElementById('rejectMatchRequest').onclick = () => {
+                socket.emit('respondMatchRequest', { from, to: username, response: 'rejected' });
+                matchRequestDiv.style.display = 'none';
+            };
+        });
+
+        // Handle match request response
+        socket.on('matchRequestResponse', (data) => {
+            const { to, response } = data;
+            if (response === 'accepted') {
+                alert(`${to} accepted your match request!`);
+                // Redirect to game or start the match
+            } else {
+                alert(`${to} rejected your match request.`);
+            }
         });
     </script>
 </body>

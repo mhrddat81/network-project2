@@ -141,6 +141,22 @@ io.on('connection', (socket) => {
         logOnlineUsers();
     });
 
+    socket.on('sendMatchRequest', (data) => {
+        const { from, to } = data;
+        const recipient = onlineUsers.find(user => user.username === to);
+        if (recipient) {
+            io.to(recipient.socketId).emit('receiveMatchRequest', { from });
+        }
+    });
+
+    socket.on('respondMatchRequest', (data) => {
+        const { from, to, response } = data;
+        const requester = onlineUsers.find(user => user.username === from);
+        if (requester) {
+            io.to(requester.socketId).emit('matchRequestResponse', { to, response });
+        }
+    });
+
     socket.on('logout', () => {
         onlineUsers = onlineUsers.filter(user => user.socketId !== socket.id);
         io.emit('updateUserList', onlineUsers);
@@ -174,10 +190,6 @@ app.get('/game_lobby', (req, res) => {
     } else {
         res.redirect('/');
     }
-});
-
-app.get('/bingo', (req, res) => {
-    res.send('Bingo!');
 });
 
 // Logout route
