@@ -41,3 +41,18 @@ document.getElementById('loginForm').addEventListener('submit', function(e) {
     })
     .catch(error => console.error('Error:', error));
 });
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Fetch online users from server
+    fetch('/online_users')
+        .then(response => response.json())
+        .then(data => {
+            const userList = document.getElementById('userList');
+            data.forEach(user => {
+                const usernameElement = document.createElement('div');
+                usernameElement.textContent = user.username;
+                userList.appendChild(usernameElement);
+            });
+        })
+        .catch(error => console.error('Error fetching online users:', error));
+});

@@ -8,13 +8,29 @@
 </head>
 <body>
     <h1>Welcome to the Game Lobby, <span id="username"></span>!</h1>
-    <p>You have successfully logged in or registered!</p>
-
+    <div id="userList">
+        <!-- Usernames will be dynamically added here -->
+    </div>
+    
     <script>
         // Extract username from URL query parameter
         const urlParams = new URLSearchParams(window.location.search);
         const username = urlParams.get('username');
         document.getElementById('username').textContent = username;
+
+        // Fetch online users and update the UI
+        fetch('/online_users')
+            .then(response => response.json())
+            .then(data => {
+                const userList = document.getElementById('userList');
+                userList.innerHTML = ''; // Clear existing list
+                data.forEach(user => {
+                    const usernameElement = document.createElement('div');
+                    usernameElement.textContent = user.username;
+                    userList.appendChild(usernameElement);
+                });
+            })
+            .catch(error => console.error('Error fetching online users:', error));
     </script>
 </body>
 </html>
