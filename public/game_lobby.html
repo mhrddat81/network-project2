@@ -12,25 +12,44 @@
         <!-- Usernames will be dynamically added here -->
     </div>
     
+    <script src="/socket.io/socket.io.js"></script>
     <script>
         // Extract username from URL query parameter
         const urlParams = new URLSearchParams(window.location.search);
         const username = urlParams.get('username');
         document.getElementById('username').textContent = username;
 
-        // Fetch online users and update the UI
-        fetch('/online_users')
-            .then(response => response.json())
-            .then(data => {
-                const userList = document.getElementById('userList');
-                userList.innerHTML = ''; // Clear existing list
-                data.forEach(user => {
+        // Initialize Socket.io
+        const socket = io();
+
+        // Emit joinGameLobby event when the page loads
+        socket.emit('joinGameLobby', username);
+
+        // Function to update user list
+        function updateUserList(users) {
+            const userList = document.getElementById('userList');
+            userList.innerHTML = ''; // Clear existing list
+            users.forEach(user => {
+                if (user.username !== username) { // Exclude the current user
                     const usernameElement = document.createElement('div');
                     usernameElement.textContent = user.username;
+                    usernameElement.addEventListener('click', () => {
+                        alert('Bingo!');
+                    });
                     userList.appendChild(usernameElement);
-                });
-            })
-            .catch(error => console.error('Error fetching online users:', error));
+                }
+            });
+        }
+
+        // Listen for real-time updates
+        socket.on('updateUserList', (users) => {
+            updateUserList(users);
+        });
+
+        // Handle logout event from server
+        socket.on('logout', () => {
+            window.location.href = '/';
+        });
     </script>
 </body>
 </html>

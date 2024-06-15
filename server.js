@@ -5,8 +5,14 @@ const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const http = require('http');
+const socketIo = require('socket.io');
 const app = express();
 const port = 3000;
+
+// Create HTTP server and bind Socket.io to it
+const server = http.createServer(app);
+const io = socketIo(server);
 let onlineUsers = [];
 
 // MySQL connection
@@ -30,7 +36,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(session({
-    secret: '123', // Replace with a random string for security your_secret_key
+    secret: '123', // Replace with a random string for security
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -86,58 +92,79 @@ app.post('/register', (req, res) => {
 });
 
 app.post('/login', (req, res) => {
-  const { username, password } = req.body;
+    const { username, password } = req.body;
 
-  console.log('Login request received:', username);
+    console.log('Login request received:', username);
 
-  db.query('SELECT * FROM players WHERE username = ?', [username], (err, results) => {
-      if (err) {
-          console.error('Database error on SELECT:', err);
-          return res.status(500).send('Database error');
-      }
-      if (results.length === 0) {
-          console.log('User not found:', username);
-          return res.status(400).send('User not found');
-      }
+    db.query('SELECT * FROM players WHERE username = ?', [username], (err, results) => {
+        if (err) {
+            console.error('Database error on SELECT:', err);
+            return res.status(500).send('Database error');
+        }
+        if (results.length === 0) {
+            console.log('User not found:', username);
+            return res.status(400).send('User not found');
+        }
 
-      const user = results[0];
-      bcrypt.compare(password, user.password, (err, isMatch) => {
-          if (err) {
-              console.error('Bcrypt error:', err);
-              return res.status(500).send('Server error');
-          }
-          if (!isMatch) {
-              console.log('Invalid password for user:', username);
-              return res.status(400).send('Invalid password');
-          }
-          
-          // Store user data in session
-          req.session.user = {
-              id: user.id,
-              username: user.username
-          };
+        const user = results[0];
+        bcrypt.compare(password, user.password, (err, isMatch) => {
+            if (err) {
+                console.error('Bcrypt error:', err);
+                return res.status(500).send('Server error');
+            }
+            if (!isMatch) {
+                console.log('Invalid password for user:', username);
+                return res.status(400).send('Invalid password');
+            }
 
-          // Add user to online users list
-          onlineUsers.push({ id: user.id, username: user.username });
-          logOnlineUsers(); // Log online users
-          
-          console.log('User logged in successfully:', username);
-          res.status(200).send('User logged in');
-      });
-  });
+            // Store user data in session
+            req.session.user = {
+                id: user.id,
+                username: user.username
+            };
+
+            console.log('User logged in successfully:', username);
+            res.status(200).send('User logged in');
+        });
+    });
+});
+
+// Handle socket connections
+io.on('connection', (socket) => {
+    console.log('A user connected');
+
+    socket.on('joinGameLobby', (username) => {
+        if (!onlineUsers.some(user => user.username === username)) {
+            onlineUsers.push({ username, socketId: socket.id });
+        }
+        io.emit('updateUserList', onlineUsers);
+        logOnlineUsers();
+    });
+
+    socket.on('logout', () => {
+        onlineUsers = onlineUsers.filter(user => user.socketId !== socket.id);
+        io.emit('updateUserList', onlineUsers);
+        logOnlineUsers();
+    });
+
+    socket.on('disconnect', () => {
+        onlineUsers = onlineUsers.filter(user => user.socketId !== socket.id);
+        io.emit('updateUserList', onlineUsers);
+        console.log('A user disconnected');
+        logOnlineUsers();
+    });
 });
 
 // Route to fetch online users
 app.get('/online_users', (req, res) => {
-  if (req.session.user) {
-      // Send the list of online users (excluding current user)
-      const onlineUsernames = onlineUsers.filter(user => user.username !== req.session.user.username);
-      res.json(onlineUsernames);
-  } else {
-      res.status(401).send('Unauthorized'); // Example: Handle unauthorized access
-  }
+    if (req.session.user) {
+        // Send the list of online users (excluding current user)
+        const onlineUsernames = onlineUsers.filter(user => user.username !== req.session.user.username);
+        res.json(onlineUsernames);
+    } else {
+        res.status(401).send('Unauthorized'); // Example: Handle unauthorized access
+    }
 });
-
 
 // Example protected route
 app.get('/game_lobby', (req, res) => {
@@ -156,9 +183,11 @@ app.get('/bingo', (req, res) => {
 // Logout route
 app.get('/logout', (req, res) => {
     if (req.session.user) {
-        // Remove user from online users list on logout
-        onlineUsers = onlineUsers.filter(user => user.username !== req.session.user.username);
-        logOnlineUsers(); // Log online users
+        // Find the user's socket
+        const user = onlineUsers.find(user => user.username === req.session.user.username);
+        if (user) {
+            io.to(user.socketId).emit('logout');
+        }
     }
     req.session.destroy(err => {
         if (err) {
@@ -169,6 +198,7 @@ app.get('/logout', (req, res) => {
     });
 });
 
-app.listen(port, () => {
+// Listen on the HTTP server instead of app
+server.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
