@@ -2,7 +2,7 @@ document.getElementById('registerForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const username = document.getElementById('registerUsername').value;
     const password = document.getElementById('registerPassword').value;
-  
+
     fetch('/register', {
         method: 'POST',
         headers: {
@@ -10,16 +10,21 @@ document.getElementById('registerForm').addEventListener('submit', function(e) {
         },
         body: JSON.stringify({ username, password })
     })
-    .then(response => response.text())
-    .then(data => alert(data))
+    .then(response => {
+        if (response.ok) {
+            window.location.href = `/game_lobby.html?username=${encodeURIComponent(username)}`;
+        } else {
+            response.text().then(text => alert(text));
+        }
+    })
     .catch(error => console.error('Error:', error));
-  });
-  
-  document.getElementById('loginForm').addEventListener('submit', function(e) {
+});
+
+document.getElementById('loginForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const username = document.getElementById('loginUsername').value;
     const password = document.getElementById('loginPassword').value;
-  
+
     fetch('/login', {
         method: 'POST',
         headers: {
@@ -27,8 +32,12 @@ document.getElementById('registerForm').addEventListener('submit', function(e) {
         },
         body: JSON.stringify({ username, password })
     })
-    .then(response => response.text())
-    .then(data => alert(data))
+    .then(response => {
+        if (response.ok) {
+            window.location.href = `/game_lobby.html?username=${encodeURIComponent(username)}`;
+        } else {
+            response.text().then(text => alert(text));
+        }
+    })
     .catch(error => console.error('Error:', error));
-  });
-  
+});

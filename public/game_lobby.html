@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Lobby</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <h1>Welcome to the Game Lobby, <span id="username"></span>!</h1>
+    <p>You have successfully logged in or registered!</p>
+
+    <script>
+        // Extract username from URL query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const username = urlParams.get('username');
+        document.getElementById('username').textContent = username;
+    </script>
+</body>
+</html>
