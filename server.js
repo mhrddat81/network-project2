@@ -14,6 +14,7 @@ const port = 3000;
 const server = http.createServer(app);
 const io = socketIo(server);
 let onlineUsers = [];
+let ongoingGames = [];
 
 // MySQL connection
 const db = mysql.createConnection({
@@ -50,6 +51,15 @@ function logOnlineUsers() {
     console.log('Online Users:');
     onlineUsers.forEach(user => {
         console.log(`- ${user.username}`);
+    });
+    console.log('----------------------');
+}
+
+// Function to log ongoing games
+function logOngoingGames() {
+    console.log('Ongoing Games:');
+    ongoingGames.forEach(game => {
+        console.log(`- Game ID: ${game.id}, Players: ${game.player1}, ${game.player2}`);
     });
     console.log('----------------------');
 }
@@ -138,6 +148,7 @@ io.on('connection', (socket) => {
             onlineUsers.push({ username, socketId: socket.id });
         }
         io.emit('updateUserList', onlineUsers);
+        io.emit('updateOngoingGames', ongoingGames);
         logOnlineUsers();
     });
 
@@ -152,8 +163,45 @@ io.on('connection', (socket) => {
     socket.on('respondMatchRequest', (data) => {
         const { from, to, response } = data;
         const requester = onlineUsers.find(user => user.username === from);
-        if (requester) {
-            io.to(requester.socketId).emit('matchRequestResponse', { to, response });
+        const recipient = onlineUsers.find(user => user.username === to);
+
+        if (requester && recipient) {
+            if (response === 'accept') {
+                // Get user IDs from the database
+                db.query('SELECT id, username FROM players WHERE username IN (?, ?)', [from, to], (err, results) => {
+                    if (err) {
+                        console.error('Database error on SELECT:', err);
+                        return;
+                    }
+                    if (results.length === 2) {
+                        const player1 = results.find(user => user.username === from);
+                        const player2 = results.find(user => user.username === to);
+
+                        // Insert match into database
+                        db.query('INSERT INTO games (player1_id, player2_id, game_date) VALUES (?, ?, NOW())', [player1.id, player2.id], (err, result) => {
+                            if (err) {
+                                console.error('Database error on INSERT:', err);
+                            } else {
+                                const gameId = result.insertId;
+                                ongoingGames.push({ id: gameId, player1: from, player2: to });
+                                
+                                // Remove players from online users list
+                                onlineUsers = onlineUsers.filter(user => user.username !== from && user.username !== to);
+
+                                io.emit('updateOngoingGames', ongoingGames);
+                                io.emit('updateUserList', onlineUsers);
+                                logOngoingGames();
+
+                                // Redirect both players to game.html
+                                io.to(requester.socketId).emit('startGame', { gameId, opponent: to });
+                                io.to(recipient.socketId).emit('startGame', { gameId, opponent: from });
+                            }
+                        });
+                    }
+                });
+            } else {
+                io.to(requester.socketId).emit('matchRequestResponse', { to, response });
+            }
         }
     });
 
@@ -192,6 +240,10 @@ app.get('/game_lobby', (req, res) => {
     }
 });
 
+app.get('/bingo', (req, res) => {
+    res.send('Bingo!');
+});
+
 // Logout route
 app.get('/logout', (req, res) => {
     if (req.session.user) {
@@ -210,7 +262,11 @@ app.get('/logout', (req, res) => {
     });
 });
 
-// Listen on the HTTP server instead of app
+// Serve game.html
+app.get('/game', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'game.html'));
+});
+
 server.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });

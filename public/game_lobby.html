@@ -5,13 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Game Lobby</title>
     <link rel="stylesheet" href="/styles.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        h1, h2 {
+            text-align: center;
+        }
+        #userList, #ongoingGames {
+            text-align: center;
+            margin-top: 20px;
+        }
+        #matchRequest {
+            text-align: center;
+            display: none;
+            margin-top: 20px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to the Game Lobby, <span id="username"></span>!</h1>
+    <h1>Welcome to the Game Lobby, <span id="username"></span></h1>
+    <h2>Online Users</h2>
     <div id="userList">
-        <!-- Usernames will be dynamically added here -->
+        <!-- Online users will be dynamically added here -->
     </div>
-    <div id="matchRequest" style="display: none;">
+    <div id="ongoingGames">
+        <h2>Ongoing Games</h2>
+        <!-- Ongoing games will be dynamically added here -->
+    </div>
+    <div id="matchRequest">
         <p id="matchRequestMessage"></p>
         <button id="acceptMatchRequest">Accept</button>
         <button id="rejectMatchRequest">Reject</button>
@@ -19,25 +41,22 @@
     
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // Extract username from URL query parameter
         const urlParams = new URLSearchParams(window.location.search);
         const username = urlParams.get('username');
         document.getElementById('username').textContent = username;
 
-        // Initialize Socket.io
         const socket = io();
 
-        // Emit joinGameLobby event when the page loads
         socket.emit('joinGameLobby', username);
 
-        // Function to update user list
         function updateUserList(users) {
             const userList = document.getElementById('userList');
-            userList.innerHTML = ''; // Clear existing list
+            userList.innerHTML = '';
             users.forEach(user => {
-                if (user.username !== username) { // Exclude the current user
+                if (user.username !== username) {
                     const usernameElement = document.createElement('div');
                     usernameElement.textContent = user.username;
+                    usernameElement.style.cursor = 'pointer';
                     usernameElement.addEventListener('click', () => {
                         socket.emit('sendMatchRequest', { from: username, to: user.username });
                     });
@@ -46,44 +65,56 @@
             });
         }
 
-        // Listen for real-time updates
+        function updateOngoingGames(games) {
+            const ongoingGames = document.getElementById('ongoingGames');
+            ongoingGames.innerHTML = '<h2>Ongoing Games</h2>';
+            games.forEach(game => {
+                const gameElement = document.createElement('div');
+                gameElement.textContent = `Game ID: ${game.id}, Players: ${game.player1} vs ${game.player2}`;
+                ongoingGames.appendChild(gameElement);
+            });
+        }
+
         socket.on('updateUserList', (users) => {
             updateUserList(users);
         });
 
-        // Handle logout event from server
+        socket.on('updateOngoingGames', (games) => {
+            updateOngoingGames(games);
+        });
+
         socket.on('logout', () => {
             window.location.href = '/';
         });
 
-        // Handle receiving match request
         socket.on('receiveMatchRequest', (data) => {
             const { from } = data;
-            const matchRequestDiv = document.getElementById('matchRequest');
+            const matchRequest = document.getElementById('matchRequest');
             const matchRequestMessage = document.getElementById('matchRequestMessage');
-            matchRequestMessage.textContent = `Match request from ${from}`;
-            matchRequestDiv.style.display = 'block';
+            matchRequestMessage.textContent = `${from} has challenged you to a match!`;
+            matchRequest.style.display = 'block';
 
             document.getElementById('acceptMatchRequest').onclick = () => {
-                socket.emit('respondMatchRequest', { from, to: username, response: 'accepted' });
-                matchRequestDiv.style.display = 'none';
+                socket.emit('respondMatchRequest', { from, to: username, response: 'accept' });
+                matchRequest.style.display = 'none';
             };
 
             document.getElementById('rejectMatchRequest').onclick = () => {
-                socket.emit('respondMatchRequest', { from, to: username, response: 'rejected' });
-                matchRequestDiv.style.display = 'none';
+                socket.emit('respondMatchRequest', { from, to: username, response: 'reject' });
+                matchRequest.style.display = 'none';
             };
         });
 
-        // Handle match request response
         socket.on('matchRequestResponse', (data) => {
             const { to, response } = data;
-            if (response === 'accepted') {
-                alert(`${to} accepted your match request!`);
-                // Redirect to game or start the match
-            } else {
-                alert(`${to} rejected your match request.`);
+            if (response === 'reject') {
+                alert(`${to} has rejected your match request.`);
             }
+        });
+
+        socket.on('startGame', (data) => {
+            const { gameId, opponent } = data;
+            window.location.href = `/game?gameId=${gameId}&opponent=${opponent}&username=${username}`;
         });
     </script>
 </body>

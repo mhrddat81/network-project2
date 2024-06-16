@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic Tac Toe Game</title>
+</head>
+<body>
+    <h1>Tic Tac Toe Game</h1>
+    <p>Welcome, <span id="username"></span>. You are playing against <span id="opponent"></span>.</p>
+    <div id="gameBoard">
+        <!-- Tic Tac Toe game implementation goes here -->
+    </div>
+    
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const gameId = urlParams.get('gameId');
+        const opponent = urlParams.get('opponent');
+        const username = urlParams.get('username');
+
+        document.getElementById('username').textContent = username;
+        document.getElementById('opponent').textContent = opponent;
+
+        // Additional game logic goes here
+    </script>
+</body>
+</html>
