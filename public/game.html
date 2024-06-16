@@ -4,14 +4,51 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tic Tac Toe Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        #gameBoard {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-template-rows: repeat(3, 100px);
+            gap: 5px;
+            margin: 20px auto;
+        }
+        .cell {
+            width: 100px;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2em;
+            border: 1px solid #000;
+            cursor: pointer;
+        }
+        .disabled {
+            pointer-events: none;
+        }
+    </style>
 </head>
 <body>
     <h1>Tic Tac Toe Game</h1>
     <p>Welcome, <span id="username"></span>. You are playing against <span id="opponent"></span>.</p>
+    <p id="turnNotification"></p>
     <div id="gameBoard">
-        <!-- Tic Tac Toe game implementation goes here -->
+        <!-- 9 cells for Tic Tac Toe -->
+        <div class="cell" data-cell-index="0"></div>
+        <div class="cell" data-cell-index="1"></div>
+        <div class="cell" data-cell-index="2"></div>
+        <div class="cell" data-cell-index="3"></div>
+        <div class="cell" data-cell-index="4"></div>
+        <div class="cell" data-cell-index="5"></div>
+        <div class="cell" data-cell-index="6"></div>
+        <div class="cell" data-cell-index="7"></div>
+        <div class="cell" data-cell-index="8"></div>
     </div>
     
+    <script src="/socket.io/socket.io.js"></script>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const gameId = urlParams.get('gameId');
@@ -21,7 +58,83 @@
         document.getElementById('username').textContent = username;
         document.getElementById('opponent').textContent = opponent;
 
-        // Additional game logic goes here
+        const socket = io();
+        const cells = document.querySelectorAll('.cell');
+        let isMyTurn = false;
+        let mySymbol = '';
+        let opponentSymbol = '';
+
+        // Initialize game state
+        socket.emit('joinGame', { gameId, username });
+
+        socket.on('gameStart', (data) => {
+            isMyTurn = data.turn === username;
+            mySymbol = data.symbol;
+            opponentSymbol = mySymbol === 'X' ? 'O' : 'X';
+            updateTurnNotification();
+        });
+
+        cells.forEach(cell => {
+            cell.addEventListener('click', () => {
+                if (isMyTurn && !cell.textContent) {
+                    cell.textContent = mySymbol;
+                    const cellIndex = cell.getAttribute('data-cell-index');
+                    socket.emit('makeMove', { gameId, username, cellIndex });
+                }
+            });
+        });
+
+        socket.on('moveMade', (data) => {
+            const { cellIndex, symbol } = data;
+            cells[cellIndex].textContent = symbol;
+            isMyTurn = symbol !== mySymbol;
+            updateTurnNotification();
+            checkGameStatus();
+        });
+
+        socket.on('gameOver', (data) => {
+            alert(data.message);
+            if (data.winner !== '0') {
+                if (data.winner === mySymbol) {
+                    alert('You won!');
+                } else {
+                    alert('You lost.');
+                }
+            } else {
+                alert('It\'s a tie!');
+            }
+            window.location.href = '/game_lobby';
+        });
+
+        function updateTurnNotification() {
+            const turnNotification = document.getElementById('turnNotification');
+            if (isMyTurn) {
+                turnNotification.textContent = 'It\'s your turn!';
+            } else {
+                turnNotification.textContent = 'Waiting for your opponent\'s move...';
+            }
+        }
+
+        function checkGameStatus() {
+            const winPatterns = [
+                [0, 1, 2], [3, 4, 5], [6, 7, 8],
+                [0, 3, 6], [1, 4, 7], [2, 5, 8],
+                [0, 4, 8], [2, 4, 6]
+            ];
+            const board = Array.from(cells).map(cell => cell.textContent);
+
+            for (let pattern of winPatterns) {
+                const [a, b, c] = pattern;
+                if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+                    socket.emit('gameOver', { gameId, winner: mySymbol === board[a] ? username : opponent, loser: mySymbol === board[a] ? opponent : username });
+                    return;
+                }
+            }
+
+            if (board.every(cell => cell)) {
+                socket.emit('gameOver', { gameId, winner: '0', loser: '0' });
+            }
+        }
     </script>
 </body>
 </html>
