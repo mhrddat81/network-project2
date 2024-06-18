@@ -64,6 +64,23 @@ function logOngoingGames() {
     console.log('----------------------');
 }
 
+// Function to check for a winner
+function checkWinner(moves) {
+    const winningCombinations = [
+        [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
+        [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
+        [0, 4, 8], [2, 4, 6]             // diagonals
+    ];
+
+    for (let combination of winningCombinations) {
+        const [a, b, c] = combination;
+        if (moves[a] && moves[a] === moves[b] && moves[a] === moves[c]) {
+            return moves[a];
+        }
+    }
+    return moves.includes(null) ? null : 'tie';
+}
+
 // Routes
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -165,7 +182,11 @@ app.get('/game_lobby', (req, res) => {
 });
 
 app.get('/game', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'game.html'));
+    if (req.session.user) {
+        res.sendFile(path.join(__dirname, 'public', 'game.html'));
+    } else {
+        res.redirect('/');
+    }
 });
 
 app.get('/bingo', (req, res) => {
@@ -202,7 +223,9 @@ io.on('connection', (socket) => {
         const targetUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === to);
         if (targetUserSocket) {
             targetUserSocket.emit('receiveMatchRequest', { from });
+            socket.emit('matchRequestSent', { to });
         }
+        console.log(`Match request sent from ${from} to ${to}`);
     });
 
     socket.on('respondMatchRequest', (data) => {
@@ -215,7 +238,7 @@ io.on('connection', (socket) => {
                 const player1 = onlineUsers.find(user => user.username === from);
                 const player2 = onlineUsers.find(user => user.username === to);
                 const gameId = ongoingGames.length + 1;
-                ongoingGames.push({ id: gameId, player1: from, player2: to });
+                ongoingGames.push({ id: gameId, player1: from, player2: to, moves: Array(9).fill(null), turn: from });
                 logOngoingGames(); // Log ongoing games
                 // Remove players from online users list
                 onlineUsers = onlineUsers.filter(user => user.username !== from && user.username !== to);
@@ -223,7 +246,11 @@ io.on('connection', (socket) => {
                 io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
 
                 fromUserSocket.emit('startGame', { gameId, opponent: to, symbol: 'X', turn: from });
-                socket.emit('startGame', { gameId, opponent: from, symbol: 'O', turn: from });
+                const toUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === to);
+                if (toUserSocket) {
+                    toUserSocket.emit('startGame', { gameId, opponent: from, symbol: 'O', turn: from });
+                }
+                console.log(`Game started between ${from} and ${to}`);
             }
         }
     });
@@ -233,7 +260,7 @@ io.on('connection', (socket) => {
         socket.join(`game-${gameId}`);
         const game = ongoingGames.find(game => game.id === gameId);
         if (game) {
-            const turn = game.player1 === username ? game.player1 : game.player2;
+            const turn = game.turn;
             const symbol = game.player1 === username ? 'X' : 'O';
             socket.emit('gameStart', { turn, symbol });
         }
@@ -241,44 +268,53 @@ io.on('connection', (socket) => {
 
     socket.on('makeMove', (data) => {
         const { gameId, username, cellIndex } = data;
-        socket.to(`game-${gameId}`).emit('moveMade', { cellIndex, symbol: username });
-    });
+        const game = ongoingGames.find(game => game.id === gameId);
+        if (game && game.moves[cellIndex] === null && game.turn === username) {
+            const symbol = game.player1 === username ? 'X' : 'O';
+            game.moves[cellIndex] = symbol;
 
-    socket.on('gameOver', (data) => {
-        const { gameId, winner, loser } = data;
-        const gameIndex = ongoingGames.findIndex(game => game.id === gameId);
-        if (gameIndex !== -1) {
-            ongoingGames.splice(gameIndex, 1);
-            logOngoingGames(); // Log ongoing games
-            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
+            // Notify all clients in the game room about the move
+            io.in(`game-${gameId}`).emit('moveMade', { cellIndex, symbol });
 
-            // Save game result in the database
-            const gameDate = new Date();
-            db.query(
-                'INSERT INTO games (player1_id, player2_id, winner_id, loser_id, game_date) VALUES ((SELECT id FROM players WHERE username = ?), (SELECT id FROM players WHERE username = ?), (SELECT id FROM players WHERE username = ?), (SELECT id FROM players WHERE username = ?), ?)',
-                [data.winner, data.loser, data.winner === '0' ? null : data.winner, data.loser === '0' ? null : data.loser, gameDate],
-                (err, result) => {
-                    if (err) {
-                        console.error('Database error on INSERT:', err);
-                    } else {
-                        console.log('Game result saved:', result.insertId);
-                    }
-                }
-            );
+            // Log the move
+            console.log(`Move made by ${username} in game ${gameId} at cell ${cellIndex}`);
 
-            io.in(`game-${gameId}`).emit('gameOver', { message: winner === '0' ? 'The game is a tie!' : `${winner} wins!`, winner });
+            // Check for winner or tie
+            const winner = checkWinner(game.moves);
+            if (winner) {
+                io.in(`game-${gameId}`).emit('gameOver', { winner });
+                // Save game result to database
+                db.query('INSERT INTO game_results (player1, player2, winner) VALUES (?, ?, ?)', 
+                         [game.player1, game.player2, winner === 'tie' ? 'tie' : (winner === 'X' ? game.player1 : game.player2)],
+                         (err, result) => {
+                             if (err) {
+                                 console.error('Database error on INSERT game result:', err);
+                             } else {
+                                 console.log('Game result saved successfully');
+                             }
+                         });
+                // Remove the game from ongoing games
+                ongoingGames = ongoingGames.filter(g => g.id !== gameId);
+                logOngoingGames(); // Log ongoing games
+                console.log(`Game over. Winner: ${winner}`);
+            } else {
+                // Switch turn
+                game.turn = game.turn === game.player1 ? game.player2 : game.player1;
+                io.in(`game-${gameId}`).emit('updateTurn', { turn: game.turn });
+                console.log(`Turn switched to ${game.turn}`);
+            }
         }
     });
 
     socket.on('disconnect', () => {
-        if (socket.username) {
-            onlineUsers = onlineUsers.filter(user => user.username !== socket.username);
-            logOnlineUsers(); // Log online users
-            io.to('gameLobby').emit('updateUserList', onlineUsers);
-        }
+        onlineUsers = onlineUsers.filter(user => user.username !== socket.username);
+        logOnlineUsers(); // Log online users
+        io.to('gameLobby').emit('updateUserList', onlineUsers);
+        console.log(`${socket.username} disconnected`);
     });
 });
 
+// Start the server
 server.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+    console.log(`Server is running on http://localhost:${port}`);
 });
