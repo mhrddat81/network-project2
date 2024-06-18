@@ -7,12 +7,14 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const http = require('http');
 const socketIo = require('socket.io');
+
 const app = express();
 const port = 3000;
 
 // Create HTTP server and bind Socket.io to it
 const server = http.createServer(app);
 const io = socketIo(server);
+
 let onlineUsers = [];
 let ongoingGames = [];
 
@@ -150,10 +152,12 @@ app.post('/login', (req, res) => {
                 username: user.username
             };
 
-            // Add user to online users list
-            onlineUsers.push({ id: user.id, username: user.username });
-            logOnlineUsers(); // Log online users
-            
+            // Add user to online users list if not already present
+            if (!onlineUsers.some(u => u.username === user.username)) {
+                onlineUsers.push({ id: user.id, username: user.username });
+                logOnlineUsers(); // Log online users
+            }
+
             console.log('User logged in successfully:', username);
             res.status(200).send('User logged in');
         });
@@ -187,10 +191,6 @@ app.get('/game', (req, res) => {
     } else {
         res.redirect('/');
     }
-});
-
-app.get('/bingo', (req, res) => {
-    res.send('Bingo!');
 });
 
 // Logout route
@@ -228,32 +228,50 @@ io.on('connection', (socket) => {
         console.log(`Match request sent from ${from} to ${to}`);
     });
 
+
     socket.on('respondMatchRequest', (data) => {
         const { from, to, response } = data;
         const fromUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === from);
-        if (fromUserSocket) {
-            fromUserSocket.emit('matchRequestResponse', { to, response });
-            if (response === 'accept') {
-                // Start a new game
-                const player1 = onlineUsers.find(user => user.username === from);
-                const player2 = onlineUsers.find(user => user.username === to);
-                const gameId = ongoingGames.length + 1;
-                ongoingGames.push({ id: gameId, player1: from, player2: to, moves: Array(9).fill(null), turn: from });
-                logOngoingGames(); // Log ongoing games
-                // Remove players from online users list
-                onlineUsers = onlineUsers.filter(user => user.username !== from && user.username !== to);
-                io.to('gameLobby').emit('updateUserList', onlineUsers);
-                io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
-
-                fromUserSocket.emit('startGame', { gameId, opponent: to, symbol: 'X', turn: from });
-                const toUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === to);
-                if (toUserSocket) {
-                    toUserSocket.emit('startGame', { gameId, opponent: from, symbol: 'O', turn: from });
-                }
-                console.log(`Game started between ${from} and ${to}`);
+    
+        if (!fromUserSocket) {
+            console.error(`Socket for user ${from} not found.`);
+            return; // Exit early if sender's socket is not found
+        }
+    
+        fromUserSocket.emit('matchRequestResponse', { to, response });
+    
+        if (response === 'accept') {
+            const targetUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === to);
+            
+            if (!targetUserSocket) {
+                console.error(`Socket for user ${to} not found.`);
+                // Inform the sender that the target user is not available
+                fromUserSocket.emit('matchRequestFailed', { to });
+                return; // Exit early if target user's socket is not found
             }
+    
+            // Start a new game
+            const gameId = ongoingGames.length + 1;
+            ongoingGames.push({ id: gameId, player1: from, player2: to, moves: Array(9).fill(null), turn: from });
+            logOngoingGames(); // Log ongoing games
+    
+            // Remove players from online users list
+            onlineUsers = onlineUsers.filter(user => user.username !== from && user.username !== to);
+            io.to('gameLobby').emit('updateUserList', onlineUsers);
+            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
+    
+            // Notify both players to start the game
+            fromUserSocket.emit('startGame', { gameId, opponent: to, symbol: 'X', turn: from });
+            targetUserSocket.emit('startGame', { gameId, opponent: from, symbol: 'O', turn: from });
+    
+            // Join game room
+            fromUserSocket.join(`game-${gameId}`);
+            targetUserSocket.join(`game-${gameId}`);
+    
+            console.log(`Game started between ${from} and ${to}`);
         }
     });
+    
 
     socket.on('joinGame', (data) => {
         const { gameId, username } = data;
@@ -262,7 +280,7 @@ io.on('connection', (socket) => {
         if (game) {
             const turn = game.turn;
             const symbol = game.player1 === username ? 'X' : 'O';
-            socket.emit('gameStart', { turn, symbol });
+            socket.emit('gameStart', { gameId, turn, symbol });
         }
     });
 

@@ -6,17 +6,16 @@
     <title>Tic Tac Toe</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             height: 100vh;
-            margin: 0;
             background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
         }
         h1 {
-            color: #333;
+            margin-bottom: 20px;
         }
         .board {
             display: grid;
@@ -27,35 +26,21 @@
         .cell {
             width: 100px;
             height: 100px;
-            background-color: white;
+            background-color: #fff;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2em;
+            font-size: 24px;
             cursor: pointer;
             border: 1px solid #ccc;
         }
-        .cell:hover {
-            background-color: #e0e0e0;
-        }
-        #turnInfo {
+        .status {
             margin-top: 20px;
-            font-size: 1.2em;
-        }
-        #log {
-            margin-top: 20px;
-            width: 300px;
-            height: 100px;
-            overflow-y: auto;
-            background-color: #fff;
-            border: 1px solid #ccc;
-            padding: 10px;
         }
     </style>
 </head>
 <body>
     <h1>Tic Tac Toe</h1>
-    <div id="turnInfo">Waiting for opponent...</div>
     <div class="board" id="board">
         <div class="cell" data-index="0"></div>
         <div class="cell" data-index="1"></div>
@@ -67,64 +52,63 @@
         <div class="cell" data-index="7"></div>
         <div class="cell" data-index="8"></div>
     </div>
-    <div id="log"></div>
-
+    <div class="status" id="status">Connecting...</div>
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         const board = document.getElementById('board');
-        const turnInfo = document.getElementById('turnInfo');
-        const logDiv = document.getElementById('log');
-        let symbol, turn;
+        const statusDiv = document.getElementById('status');
+        let gameId, symbol, turn;
 
-        // Log messages
-        function logMessage(message) {
-            const p = document.createElement('p');
-            p.textContent = message;
-            logDiv.appendChild(p);
-            logDiv.scrollTop = logDiv.scrollHeight;
-        }
+        socket.on('connect', () => {
+            // Emit joinGame event with gameId and username
+            const username = sessionStorage.getItem('username'); // Assuming username is stored in sessionStorage
+            gameId = new URLSearchParams(window.location.search).get('gameId');
+            socket.emit('joinGame', { gameId, username });
+        });
 
-        // Event: Game Start
         socket.on('gameStart', (data) => {
             symbol = data.symbol;
             turn = data.turn;
-            turnInfo.textContent = `Your symbol: ${symbol}. ${turn === symbol ? 'Your turn!' : 'Opponent\'s turn...'}`;
-            logMessage('Game started');
+            updateStatus();
         });
 
-        // Event: Move Made
         socket.on('moveMade', (data) => {
-            const cell = document.querySelector(`.cell[data-index='${data.cellIndex}']`);
+            const cell = document.querySelector(`.cell[data-index="${data.cellIndex}"]`);
             cell.textContent = data.symbol;
-            turn = turn === 'X' ? 'O' : 'X';
-            turnInfo.textContent = `${turn === symbol ? 'Your turn!' : 'Opponent\'s turn...'}`;
-            logMessage(`Move made by ${data.symbol} at cell ${data.cellIndex}`);
+            cell.style.pointerEvents = 'none';
         });
 
-        // Event: Update Turn
         socket.on('updateTurn', (data) => {
             turn = data.turn;
-            turnInfo.textContent = `${turn === symbol ? 'Your turn!' : 'Opponent\'s turn...'}`;
-            logMessage(`Turn switched to ${data.turn}`);
+            updateStatus();
         });
 
-        // Event: Game Over
         socket.on('gameOver', (data) => {
-            turnInfo.textContent = data.winner === 'tie' ? 'It\'s a tie!' : `${data.winner} wins!`;
-            logMessage(`Game over: ${data.winner === 'tie' ? 'It\'s a tie!' : `${data.winner} wins!`}`);
+            statusDiv.textContent = data.winner === 'tie' ? "It's a tie!" : `${data.winner} wins!`;
+            board.style.pointerEvents = 'none';
         });
 
-        // Handle cell clicks
-        board.addEventListener('click', (e) => {
-            if (e.target.classList.contains('cell') && !e.target.textContent && turn === symbol) {
-                const cellIndex = e.target.getAttribute('data-index');
-                socket.emit('makeMove', { gameId: 1, username: 'user1', cellIndex }); // Replace 'user1' with the actual username
+        board.addEventListener('click', (event) => {
+            if (event.target.classList.contains('cell') && turn === sessionStorage.getItem('username')) {
+                const cellIndex = event.target.getAttribute('data-index');
+                socket.emit('makeMove', { gameId, username: sessionStorage.getItem('username'), cellIndex });
             }
         });
 
-        // Simulate joining the game
-        socket.emit('joinGame', { gameId: 1, username: 'user1' }); // Replace 'user1' with the actual username
+        function updateStatus() {
+            statusDiv.textContent = `Your symbol: ${symbol}. ${turn === sessionStorage.getItem('username') ? "Your turn..." : "Opponent's turn..."}`;
+            board.style.pointerEvents = turn === sessionStorage.getItem('username') ? 'auto' : 'none';
+        }
+
+        // Store username in session storage
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            const username = params.get('username');
+            if (username) {
+                sessionStorage.setItem('username', username);
+            }
+        })();
     </script>
 </body>
 </html>
