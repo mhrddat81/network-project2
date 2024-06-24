@@ -3,14 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tic Tac Toe</title>
-    <link rel="stylesheet" href="/styles.css">
+    <title>Tic-Tac-Toe Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f4f4f4;
+        }
+        #game {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            flex-direction: column;
+        }
+        #board {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-template-rows: repeat(3, 100px);
+            gap: 5px;
+        }
+        .cell {
+            width: 100px;
+            height: 100px;
+            background-color: white;
+            border: 2px solid #ccc;
+            font-size: 2rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+        .cell.disabled {
+            pointer-events: none;
+            background-color: #eaeaea;
+        }
+        #turn {
+            margin-top: 20px;
+            font-size: 1.2rem;
+        }
+        #result {
+            margin-top: 20px;
+            font-size: 1.5rem;
+            color: red;
+        }
+    </style>
 </head>
 <body>
-    <div id="game-board" style="display: none;">
-        <h2 id="game-info">Connecting...</h2>
-        <h3 id="opponent-info"></h3>
-        <div class="board">
+    <div id="game">
+        <div id="playerInfo"></div>
+        <div id="opponentInfo"></div>
+        <div id="board">
             <div class="cell" data-index="0"></div>
             <div class="cell" data-index="1"></div>
             <div class="cell" data-index="2"></div>
@@ -21,77 +64,69 @@
             <div class="cell" data-index="7"></div>
             <div class="cell" data-index="8"></div>
         </div>
-    </div>
-    <div id="connecting">
-        <h2>Connecting...</h2>
+        <div id="turn"></div>
+        <div id="result"></div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+        let gameId;
+        let symbol;
+        let turn;
 
         document.addEventListener('DOMContentLoaded', () => {
+            // Retrieve username, opponent, and gameId from session storage
             const username = sessionStorage.getItem('username');
-            if (username) {
-                socket.emit('joinGameLobby', username);
-                console.log('Joining game lobby:', username);
-            } else {
-                console.error('No username found in session storage.');
+            const opponent = sessionStorage.getItem('opponent');
+            gameId = sessionStorage.getItem('gameId');
+
+            if (!username || !opponent || !gameId) {
+                console.error('Required data not found in session storage.');
+                return;
             }
-        });
 
-        socket.on('connect', () => {
-            console.log('Connected to server.');
-        });
+            // Join the game room
+            socket.emit('joinGame', { gameId, username });
 
-        socket.on('disconnect', () => {
-            console.log('Disconnected from server.');
-        });
+            socket.on('gameStart', (data) => {
+                gameId = data.gameId;
+                symbol = data.symbol;
+                turn = data.turn;
+                updateTurn();
+                console.log('Game started:', data);
+            });
 
-        socket.on('startGame', (data) => {
-            console.log('Start game received:', data);
-            document.getElementById('connecting').style.display = 'none';
-            document.getElementById('game-board').style.display = 'block';
+            socket.on('moveMade', (data) => {
+                const cell = document.querySelector(`.cell[data-index='${data.cellIndex}']`);
+                cell.textContent = data.symbol;
+                cell.classList.add('disabled');
+            });
 
-            const gameId = data.gameId;
-            const symbol = data.symbol;
-            const turn = data.turn;
-            const opponent = data.opponent;
+            socket.on('updateTurn', (data) => {
+                turn = data.turn;
+                updateTurn();
+                console.log('Turn update:', data);
+            });
 
-            document.getElementById('game-info').innerText = `Game ID: ${gameId}, Your symbol: ${symbol}, Your turn: ${turn === sessionStorage.getItem('username')}`;
-            document.getElementById('opponent-info').innerText = `Opponent: ${opponent}`;
-            sessionStorage.setItem('gameId', gameId);
-            sessionStorage.setItem('symbol', symbol);
-            sessionStorage.setItem('turn', turn);
-        });
+            socket.on('gameOver', (data) => {
+                document.getElementById('result').textContent = data.winner === 'tie' ? 'It\'s a tie!' : `${data.winner} wins!`;
+                document.querySelectorAll('.cell').forEach(cell => cell.classList.add('disabled'));
+            });
 
-        document.querySelectorAll('.cell').forEach(cell => {
-            cell.addEventListener('click', () => {
-                const gameId = sessionStorage.getItem('gameId');
-                const symbol = sessionStorage.getItem('symbol');
-                const cellIndex = cell.getAttribute('data-index');
-                if (sessionStorage.getItem('turn') === sessionStorage.getItem('username')) {
-                    if (cell.innerText === '') {
-                        cell.innerText = symbol;
-                        socket.emit('makeMove', { gameId, cellIndex, symbol });
+            document.querySelectorAll('.cell').forEach(cell => {
+                cell.addEventListener('click', () => {
+                    const cellIndex = cell.getAttribute('data-index');
+                    if (turn === username && cell.textContent === '') {
+                        socket.emit('makeMove', { gameId, username, cellIndex });
                     }
-                }
+                });
             });
         });
 
-        socket.on('moveMade', (data) => {
-            console.log('Move made received:', data);
-            const { cellIndex, symbol, turn } = data;
-            document.querySelector(`.cell[data-index='${cellIndex}']`).innerText = symbol;
-            document.getElementById('game-info').innerText = `Your turn: ${turn === sessionStorage.getItem('username')}`;
-            sessionStorage.setItem('turn', turn);
-        });
-
-        socket.on('gameOver', (data) => {
-            console.log('Game over received:', data);
-            alert(`Game over! Winner: ${data.winner}`);
-            document.getElementById('game-board').style.display = 'none';
-            document.getElementById('connecting').style.display = 'block';
-        });
+        function updateTurn() {
+            const turnDisplay = document.getElementById('turn');
+            turnDisplay.textContent = turn === sessionStorage.getItem('username') ? 'Your turn' : `${opponent}'s turn`;
+        }
     </script>
 </body>
 </html>

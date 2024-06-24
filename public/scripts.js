@@ -43,16 +43,37 @@ document.getElementById('loginForm').addEventListener('submit', function(e) {
 });
 
 document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const username = urlParams.get('username');
+
     // Fetch online users from server
     fetch('/online_users')
         .then(response => response.json())
         .then(data => {
             const userList = document.getElementById('userList');
+            userList.innerHTML = ''; // Clear previous list
+
             data.forEach(user => {
-                const usernameElement = document.createElement('div');
-                usernameElement.textContent = user.username;
-                userList.appendChild(usernameElement);
+                if (user.username !== username) {
+                    const usernameElement = document.createElement('div');
+                    usernameElement.textContent = user.username;
+                    userList.appendChild(usernameElement);
+                }
             });
         })
         .catch(error => console.error('Error fetching online users:', error));
+
+    // Socket.io connection
+    const socket = io();
+
+    // Retrieve game information from sessionStorage
+    const opponent = sessionStorage.getItem('opponent');
+    const symbol = sessionStorage.getItem('symbol');
+
+    // Display player and opponent information
+    const playerInfo = document.getElementById('playerInfo');
+    const opponentInfo = document.getElementById('opponentInfo');
+
+    playerInfo.textContent = `You (${symbol}) - ${username}`;
+    opponentInfo.textContent = `${opponent} (${symbol === 'X' ? 'O' : 'X'})`;
 });

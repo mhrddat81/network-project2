@@ -15,6 +15,7 @@ const io = socketIo(server);
 
 let onlineUsers = [];
 let ongoingGames = [];
+let playerGameMap = new Map();
 
 // MongoDB connection URI
 const uri = 'mongodb://localhost:27017';
@@ -194,8 +195,13 @@ io.on('connection', (socket) => {
     socket.on('joinGameLobby', (username) => {
         socket.username = username;
         socket.join('gameLobby');
+        const user = onlineUsers.find(user => user.username === username);
+        if (!user) {
+            onlineUsers.push({ id: socket.id, username });
+        }
         io.to('gameLobby').emit('updateUserList', onlineUsers);
         io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
+        console.log(`User ${username} joined game lobby`);
     });
 
     socket.on('sendMatchRequest', (data) => {
@@ -203,7 +209,7 @@ io.on('connection', (socket) => {
         const targetUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === to);
         if (targetUserSocket) {
             targetUserSocket.emit('receiveMatchRequest', { from });
-            socket.emit('matchRequestSent', { to });
+            socket.emit('matchRequestReceived', { to });
         }
         console.log(`Match request sent from ${from} to ${to}`);
     });
@@ -255,13 +261,40 @@ io.on('connection', (socket) => {
     socket.on('joinGame', (data) => {
         const { gameId, username } = data;
         socket.join(`game-${gameId}`);
+        console.log(`User ${username} joined game-${gameId}`);
+
+        // Add player to hashtable
+        playerGameMap.set(socket.id, { gameId, username });
+
         const game = ongoingGames.find(game => game.id === gameId);
         if (game) {
             const turn = game.turn;
             const symbol = game.player1 === username ? 'X' : 'O';
+            console.log(`User ${username} has the symbol ${symbol}`);
             socket.emit('gameStart', { gameId, turn, symbol });
         }
+        
+        // Log online users in the game
+        console.log('Online Players in Game:');
+        playerGameMap.forEach((value, key) => {
+            if (value.gameId === gameId) {
+                console.log(`- ${value.username}`);
+            }
+        });
+        console.log('----------------------');
     });
+
+
+    socket.on('updateUserList', (data) => {
+        console.log('User list updated:', data);
+        // Update user list in the UI
+    });
+    
+    socket.on('updateOngoingGames', (data) => {
+        console.log('Ongoing games updated:', data);
+        // Update ongoing games list in the UI
+    });
+    
 
     socket.on('makeMove', (data) => {
         const { gameId, username, cellIndex } = data;
@@ -304,14 +337,15 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        if (socket.username) {
-            onlineUsers = onlineUsers.filter(user => user.username !== socket.username);
-            logOnlineUsers(); // Log online users
-            io.to('gameLobby').emit('updateUserList', onlineUsers);
+        // Remove player from hashtable on disconnect
+        if (playerGameMap.has(socket.id)) {
+            const { gameId, username } = playerGameMap.get(socket.id);
+            playerGameMap.delete(socket.id);
+            console.log(`User ${username} disconnected from game-${gameId}`);
         }
     });
 });
 
 server.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+    console.log(`Server running on http://localhost:3000/`);
 });
