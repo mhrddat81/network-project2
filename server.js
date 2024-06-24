@@ -1,4 +1,5 @@
 const express = require('express');
+const mysql = require('mysql2');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
@@ -6,27 +7,31 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const http = require('http');
 const socketIo = require('socket.io');
-const { MongoClient, ObjectId } = require('mongodb'); // Import MongoClient and ObjectId
 
 const app = express();
 const port = 3000;
+
+// Create HTTP server and bind Socket.io to it
 const server = http.createServer(app);
 const io = socketIo(server);
 
 let onlineUsers = [];
 let ongoingGames = [];
-let playerGameMap = new Map();
 
-// MongoDB connection URI
-const uri = 'mongodb://localhost:27017';
-const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+// MySQL connection
+const db = mysql.createConnection({
+    host: 'localhost',
+    user: 'root', // Replace with your MySQL username
+    password: 'admin', // Replace with your MySQL password
+    database: 'tictactoe_db'
+});
 
-client.connect(err => {
+db.connect((err) => {
     if (err) {
-        console.error('MongoDB connection failed:', err);
+        console.error('Database connection failed: ', err);
         return;
     }
-    console.log('MongoDB Connected...');
+    console.log('MySQL Connected...');
 });
 
 // Middleware
@@ -34,10 +39,12 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(session({
-    secret: '123',
+    secret: '123', // Replace with a random string for security
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 24 * 60 * 60 * 1000 }
+    cookie: {
+        maxAge: 24 * 60 * 60 * 1000, // 1 day
+    }
 }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -59,6 +66,7 @@ function logOngoingGames() {
     console.log('----------------------');
 }
 
+// Function to check for a winner
 function checkWinner(moves) {
     const winningCombinations = [
         [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
@@ -80,69 +88,80 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Example register route using MongoDB
-app.post('/register', async (req, res) => {
+app.post('/register', (req, res) => {
     const { username, password } = req.body;
 
-    try {
-        const db = client.db('tictactoe_db');
-        const playersCollection = db.collection('players');
+    console.log('Register request received:', username);
 
-        // Check if username already exists
-        const existingUser = await playersCollection.findOne({ username });
-        if (existingUser) {
+    db.query('SELECT * FROM players WHERE username = ?', [username], (err, results) => {
+        if (err) {
+            console.error('Database error on SELECT:', err);
+            return res.status(500).send('Database error');
+        }
+        if (results.length > 0) {
             console.log('Username already exists:', username);
             return res.status(400).send('Username already exists');
         }
 
-        // Hash password
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        // Insert new user
-        const insertResult = await playersCollection.insertOne({ username, password: hashedPassword });
-        console.log('User registered successfully:', username);
-        res.status(200).send('User registered');
-    } catch (err) {
-        console.error('MongoDB error:', err);
-        res.status(500).send('Database error');
-    }
+        bcrypt.hash(password, 10, (err, hash) => {
+            if (err) {
+                console.error('Bcrypt error:', err);
+                return res.status(500).send('Server error');
+            }
+            db.query('INSERT INTO players (username, password) VALUES (?, ?)', [username, hash], (err, result) => {
+                if (err) {
+                    console.error('Database error on INSERT:', err);
+                    return res.status(500).send('Database error');
+                }
+                console.log('User registered successfully:', username);
+                res.status(200).send('User registered');
+            });
+        });
+    });
 });
 
-// Example login route using MongoDB
-app.post('/login', async (req, res) => {
+app.post('/login', (req, res) => {
     const { username, password } = req.body;
 
-    try {
-        const db = client.db('tictactoe_db');
-        const playersCollection = db.collection('players');
+    console.log('Login request received:', username);
 
-        // Find user by username
-        const user = await playersCollection.findOne({ username });
-        if (!user) {
+    db.query('SELECT * FROM players WHERE username = ?', [username], (err, results) => {
+        if (err) {
+            console.error('Database error on SELECT:', err);
+            return res.status(500).send('Database error');
+        }
+        if (results.length === 0) {
             console.log('User not found:', username);
             return res.status(400).send('User not found');
         }
 
-        // Compare password
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            console.log('Invalid password for user:', username);
-            return res.status(400).send('Invalid password');
-        }
+        const user = results[0];
+        bcrypt.compare(password, user.password, (err, isMatch) => {
+            if (err) {
+                console.error('Bcrypt error:', err);
+                return res.status(500).send('Server error');
+            }
+            if (!isMatch) {
+                console.log('Invalid password for user:', username);
+                return res.status(400).send('Invalid password');
+            }
+            
+            // Store user data in session
+            req.session.user = {
+                id: user.id,
+                username: user.username
+            };
 
-        // Store user data in session
-        req.session.user = { id: user._id, username: user.username };
+            // Add user to online users list if not already present
+            if (!onlineUsers.some(u => u.username === user.username)) {
+                onlineUsers.push({ id: user.id, username: user.username });
+                logOnlineUsers(); // Log online users
+            }
 
-        // Add user to online users list
-        onlineUsers.push({ id: user._id, username: user.username });
-        logOnlineUsers(); // Log online users
-
-        console.log('User logged in successfully:', username);
-        res.status(200).send('User logged in');
-    } catch (err) {
-        console.error('MongoDB error:', err);
-        res.status(500).send('Database error');
-    }
+            console.log('User logged in successfully:', username);
+            res.status(200).send('User logged in');
+        });
+    });
 });
 
 // Route to fetch online users
@@ -152,7 +171,7 @@ app.get('/online_users', (req, res) => {
         const onlineUsernames = onlineUsers.filter(user => user.username !== req.session.user.username);
         res.json(onlineUsernames);
     } else {
-        res.status(401).send('Unauthorized');
+        res.status(401).send('Unauthorized'); // Example: Handle unauthorized access
     }
 });
 
@@ -195,13 +214,8 @@ io.on('connection', (socket) => {
     socket.on('joinGameLobby', (username) => {
         socket.username = username;
         socket.join('gameLobby');
-        const user = onlineUsers.find(user => user.username === username);
-        if (!user) {
-            onlineUsers.push({ id: socket.id, username });
-        }
         io.to('gameLobby').emit('updateUserList', onlineUsers);
         io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
-        console.log(`User ${username} joined game lobby`);
     });
 
     socket.on('sendMatchRequest', (data) => {
@@ -209,7 +223,7 @@ io.on('connection', (socket) => {
         const targetUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === to);
         if (targetUserSocket) {
             targetUserSocket.emit('receiveMatchRequest', { from });
-            socket.emit('matchRequestReceived', { to });
+            socket.emit('matchRequestSent', { to });
         }
         console.log(`Match request sent from ${from} to ${to}`);
     });
@@ -234,118 +248,85 @@ io.on('connection', (socket) => {
                 fromUserSocket.emit('matchRequestFailed', { to });
                 return; // Exit early if target user's socket is not found
             }
+            
+            const gameId = `game_${Date.now()}`;
+            const initialTurn = Math.random() < 0.5 ? from : to;
     
-            // Start a new game
-            const gameId = ongoingGames.length + 1;
-            ongoingGames.push({ id: gameId, player1: from, player2: to, moves: Array(9).fill(null), turn: from });
+            ongoingGames.push({
+                id: gameId,
+                player1: from,
+                player2: to,
+                moves: Array(9).fill(null),
+                turn: initialTurn
+            });
+    
+            // Update the list of ongoing games in the lobby
+            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
             logOngoingGames(); // Log ongoing games
     
-            // Remove players from online users list
+            fromUserSocket.join(gameId);
+            targetUserSocket.join(gameId);
+    
+            const gameData = {
+                gameId,
+                symbol: 'X',
+                turn: initialTurn,
+                opponent: to
+            };
+            fromUserSocket.emit('startGame', gameData);
+    
+            gameData.symbol = 'O';
+            gameData.opponent = from;
+            targetUserSocket.emit('startGame', gameData);
+    
+            // Remove both players from the online users list
             onlineUsers = onlineUsers.filter(user => user.username !== from && user.username !== to);
+            logOnlineUsers(); // Log online users
+    
+            // Notify the lobby about the updated list of online users
             io.to('gameLobby').emit('updateUserList', onlineUsers);
-            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
-    
-            // Notify both players to start the game
-            fromUserSocket.emit('startGame', { gameId, opponent: to, symbol: 'X', turn: from });
-            targetUserSocket.emit('startGame', { gameId, opponent: from, symbol: 'O', turn: from });
-    
-            // Join game room
-            fromUserSocket.join(`game-${gameId}`);
-            targetUserSocket.join(`game-${gameId}`);
-    
-            console.log(`Game started between ${from} and ${to}`);
         }
-    });
-    
-
-    socket.on('joinGame', (data) => {
-        const { gameId, username } = data;
-        socket.join(`game-${gameId}`);
-        console.log(`User ${username} joined game-${gameId}`);
-
-        // Add player to hashtable
-        playerGameMap.set(socket.id, { gameId, username });
-
-        const game = ongoingGames.find(game => game.id === gameId);
-        if (game) {
-            const turn = game.turn;
-            const symbol = game.player1 === username ? 'X' : 'O';
-            console.log(`User ${username} has the symbol ${symbol}`);
-            socket.emit('gameStart', { gameId, turn, symbol });
-        }
-        
-        // Log online users in the game
-        console.log('Online Players in Game:');
-        playerGameMap.forEach((value, key) => {
-            if (value.gameId === gameId) {
-                console.log(`- ${value.username}`);
-            }
-        });
-        console.log('----------------------');
-    });
-
-
-    socket.on('updateUserList', (data) => {
-        console.log('User list updated:', data);
-        // Update user list in the UI
-    });
-    
-    socket.on('updateOngoingGames', (data) => {
-        console.log('Ongoing games updated:', data);
-        // Update ongoing games list in the UI
     });
     
 
     socket.on('makeMove', (data) => {
-        const { gameId, username, cellIndex } = data;
+        const { gameId, cellIndex, symbol } = data;
+
         const game = ongoingGames.find(game => game.id === gameId);
-        if (game && game.moves[cellIndex] === null && game.turn === username) {
-            const symbol = game.player1 === username ? 'X' : 'O';
-            game.moves[cellIndex] = symbol;
+        if (!game) return;
 
-            // Notify all clients in the game room about the move
-            io.in(`game-${gameId}`).emit('moveMade', { cellIndex, symbol });
+        // Validate the move
+        if (game.moves[cellIndex] !== null || game.turn !== socket.username) return;
 
-            // Log the move
-            console.log(`Move made by ${username} in game ${gameId} at cell ${cellIndex}`);
+        game.moves[cellIndex] = symbol;
+        game.turn = game.player1 === game.turn ? game.player2 : game.player1;
 
-            // Check for winner or tie
-            const winner = checkWinner(game.moves);
-            if (winner) {
-                io.in(`game-${gameId}`).emit('gameOver', { winner });
-                // Save game result to database
-                db.query('INSERT INTO game_results (player1, player2, winner) VALUES (?, ?, ?)', 
-                         [game.player1, game.player2, winner === 'tie' ? 'tie' : (winner === 'X' ? game.player1 : game.player2)],
-                         (err, result) => {
-                             if (err) {
-                                 console.error('Database error on INSERT game result:', err);
-                             } else {
-                                 console.log('Game result saved successfully');
-                             }
-                         });
-                // Remove the game from ongoing games
-                ongoingGames = ongoingGames.filter(g => g.id !== gameId);
-                logOngoingGames(); // Log ongoing games
-                console.log(`Game over. Winner: ${winner}`);
-            } else {
-                // Switch turn
-                game.turn = game.turn === game.player1 ? game.player2 : game.player1;
-                io.in(`game-${gameId}`).emit('updateTurn', { turn: game.turn });
-                console.log(`Turn switched to ${game.turn}`);
-            }
+        // Log the move
+        console.log(`Move made in game ${gameId} by ${socket.username}: cell ${cellIndex}, symbol ${symbol}`);
+
+        io.to(gameId).emit('moveMade', {
+            cellIndex,
+            symbol,
+            turn: game.turn
+        });
+
+        const winner = checkWinner(game.moves);
+        if (winner) {
+            io.to(gameId).emit('gameOver', { winner });
+            ongoingGames = ongoingGames.filter(g => g.id !== gameId);
+            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
+            logOngoingGames(); // Log ongoing games
         }
     });
 
     socket.on('disconnect', () => {
-        // Remove player from hashtable on disconnect
-        if (playerGameMap.has(socket.id)) {
-            const { gameId, username } = playerGameMap.get(socket.id);
-            playerGameMap.delete(socket.id);
-            console.log(`User ${username} disconnected from game-${gameId}`);
-        }
+        onlineUsers = onlineUsers.filter(user => user.username !== socket.username);
+        io.to('gameLobby').emit('updateUserList', onlineUsers);
+        logOnlineUsers(); // Log online users
     });
 });
 
+// Start the server
 server.listen(port, () => {
-    console.log(`Server running on http://localhost:3000/`);
+    console.log(`Server running on http://localhost:${port}`);
 });
