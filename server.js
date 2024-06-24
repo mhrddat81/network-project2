@@ -228,7 +228,6 @@ io.on('connection', (socket) => {
         console.log(`Match request sent from ${from} to ${to}`);
     });
 
-
     socket.on('respondMatchRequest', (data) => {
         const { from, to, response } = data;
         const fromUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === from);
@@ -249,90 +248,138 @@ io.on('connection', (socket) => {
                 fromUserSocket.emit('matchRequestFailed', { to });
                 return; // Exit early if target user's socket is not found
             }
+            
+            const gameId = `game_${Date.now()}`;
+            const initialTurn = Math.random() < 0.5 ? from : to;
     
-            // Start a new game
-            const gameId = ongoingGames.length + 1;
-            ongoingGames.push({ id: gameId, player1: from, player2: to, moves: Array(9).fill(null), turn: from });
+            ongoingGames.push({
+                id: gameId,
+                player1: from,
+                player2: to,
+                moves: Array(9).fill(null),
+                turn: initialTurn
+            });
+    
+            // Update the list of ongoing games in the lobby
+            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
             logOngoingGames(); // Log ongoing games
     
-            // Remove players from online users list
+            fromUserSocket.join(gameId);
+            targetUserSocket.join(gameId);
+    
+            const gameData = {
+                gameId,
+                symbol: 'X',
+                turn: initialTurn,
+                opponent: to
+            };
+            fromUserSocket.emit('startGame', gameData);
+    
+            gameData.symbol = 'O';
+            gameData.opponent = from;
+            targetUserSocket.emit('startGame', gameData);
+    
+            // Remove both players from the online users list
             onlineUsers = onlineUsers.filter(user => user.username !== from && user.username !== to);
+            logOnlineUsers(); // Log online users
+    
+            // Notify the lobby about the updated list of online users
             io.to('gameLobby').emit('updateUserList', onlineUsers);
-            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
-    
-            // Notify both players to start the game
-            fromUserSocket.emit('startGame', { gameId, opponent: to, symbol: 'X', turn: from });
-            targetUserSocket.emit('startGame', { gameId, opponent: from, symbol: 'O', turn: from });
-    
-            // Join game room
-            fromUserSocket.join(`game-${gameId}`);
-            targetUserSocket.join(`game-${gameId}`);
-    
-            console.log(`Game started between ${from} and ${to}`);
         }
     });
     
-
-    socket.on('joinGame', (data) => {
-        const { gameId, username } = data;
-        socket.join(`game-${gameId}`);
-        const game = ongoingGames.find(game => game.id === gameId);
-        if (game) {
-            const turn = game.turn;
-            const symbol = game.player1 === username ? 'X' : 'O';
-            socket.emit('gameStart', { gameId, turn, symbol });
-        }
-    });
-
     socket.on('makeMove', (data) => {
-        const { gameId, username, cellIndex } = data;
+        const { gameId, cellIndex, symbol } = data;
+
         const game = ongoingGames.find(game => game.id === gameId);
-        if (game && game.moves[cellIndex] === null && game.turn === username) {
-            const symbol = game.player1 === username ? 'X' : 'O';
-            game.moves[cellIndex] = symbol;
+        if (!game) return;
 
-            // Notify all clients in the game room about the move
-            io.in(`game-${gameId}`).emit('moveMade', { cellIndex, symbol });
+        // Validate the move
+        if (game.moves[cellIndex] !== null || game.turn !== socket.username) return;
 
-            // Log the move
-            console.log(`Move made by ${username} in game ${gameId} at cell ${cellIndex}`);
+        game.moves[cellIndex] = symbol;
+        game.turn = game.player1 === game.turn ? game.player2 : game.player1;
 
-            // Check for winner or tie
-            const winner = checkWinner(game.moves);
-            if (winner) {
-                io.in(`game-${gameId}`).emit('gameOver', { winner });
-                // Save game result to database
-                db.query('INSERT INTO game_results (player1, player2, winner) VALUES (?, ?, ?)', 
-                         [game.player1, game.player2, winner === 'tie' ? 'tie' : (winner === 'X' ? game.player1 : game.player2)],
-                         (err, result) => {
-                             if (err) {
-                                 console.error('Database error on INSERT game result:', err);
-                             } else {
-                                 console.log('Game result saved successfully');
-                             }
-                         });
-                // Remove the game from ongoing games
-                ongoingGames = ongoingGames.filter(g => g.id !== gameId);
-                logOngoingGames(); // Log ongoing games
-                console.log(`Game over. Winner: ${winner}`);
-            } else {
-                // Switch turn
-                game.turn = game.turn === game.player1 ? game.player2 : game.player1;
-                io.in(`game-${gameId}`).emit('updateTurn', { turn: game.turn });
-                console.log(`Turn switched to ${game.turn}`);
-            }
+        // Log the move
+        console.log(`Move made in game ${gameId} by ${socket.username}: cell ${cellIndex}, symbol ${symbol}`);
+
+        io.to(gameId).emit('moveMade', {
+            cellIndex,
+            symbol,
+            turn: game.turn
+        });
+
+        const winner = checkWinner(game.moves);
+        if (winner) {
+            io.to(gameId).emit('gameOver', { winner });
+            ongoingGames = ongoingGames.filter(g => g.id !== gameId);
+            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
+            logOngoingGames(); // Log ongoing games
         }
     });
 
     socket.on('disconnect', () => {
         onlineUsers = onlineUsers.filter(user => user.username !== socket.username);
-        logOnlineUsers(); // Log online users
         io.to('gameLobby').emit('updateUserList', onlineUsers);
-        console.log(`${socket.username} disconnected`);
+        logOnlineUsers(); // Log online users
     });
+
+    socket.on('matchRequest', (data) => {
+        console.log('Match request received:', data);
+        const { from, to } = data;
+        const fromUserSocket = io.sockets.sockets.get(from);
+        const targetUserSocket = io.sockets.sockets.get(to);
+    
+        if (fromUserSocket && targetUserSocket) {
+            const gameId = `game_${Date.now()}`;
+            const initialTurn = Math.random() < 0.5 ? from : to;
+    
+            ongoingGames.push({
+                id: gameId,
+                player1: from,
+                player2: to,
+                moves: Array(9).fill(null),
+                turn: initialTurn
+            });
+    
+            console.log('Ongoing games:', ongoingGames);
+            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
+            fromUserSocket.join(gameId);
+            targetUserSocket.join(gameId);
+    
+            const gameDataFrom = {
+                gameId,
+                symbol: 'X',
+                turn: initialTurn,
+                opponent: to
+            };
+            const gameDataTo = {
+                gameId,
+                symbol: 'O',
+                turn: initialTurn,
+                opponent: from
+            };
+    
+            fromUserSocket.emit('startGame', gameDataFrom);
+            console.log('Start game emitted to player 1:', gameDataFrom);
+    
+            targetUserSocket.emit('startGame', gameDataTo);
+            console.log('Start game emitted to player 2:', gameDataTo);
+    
+            onlineUsers = onlineUsers.filter(user => user.username !== from && user.username !== to);
+            io.to('gameLobby').emit('updateUserList', onlineUsers);
+            console.log('Updated online users:', onlineUsers);
+        } else {
+            console.error('Could not find sockets for both users.');
+        }
+    });
+    
+    
 });
+
+
 
 // Start the server
 server.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
+    console.log(`Server running on http://localhost:${port}`);
 });
