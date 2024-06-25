@@ -34,9 +34,14 @@
             align-items: center;
             cursor: pointer;
         }
+        #turnIndicator {
+            font-size: 1.2em;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
         .cell.disabled {
-            pointer-events: none;
-            background-color: #eaeaea;
+            background-color: #f0f0f0;
+            cursor: not-allowed;
         }
         #turn {
             margin-top: 20px;
@@ -53,6 +58,7 @@
     <div id="game">
         <div id="playerInfo"></div>
         <div id="opponentInfo"></div>
+        <div id="turnIndicator"></div>
         <div id="board">
             <div class="cell" data-index="0"></div>
             <div class="cell" data-index="1"></div>
@@ -64,68 +70,85 @@
             <div class="cell" data-index="7"></div>
             <div class="cell" data-index="8"></div>
         </div>
-        <div id="turn"></div>
         <div id="result"></div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        let gameId;
-        let symbol;
-        let turn;
+        let gameId, username, opponent, symbol, currentTurn;
 
         document.addEventListener('DOMContentLoaded', () => {
-            // Retrieve username, opponent, and gameId from session storage
-            const username = sessionStorage.getItem('username');
-            const opponent = sessionStorage.getItem('opponent');
+            username = sessionStorage.getItem('username');
+            opponent = sessionStorage.getItem('opponent');
             gameId = sessionStorage.getItem('gameId');
+            symbol = sessionStorage.getItem('symbol');
+            currentTurn = sessionStorage.getItem('turn');
 
-            if (!username || !opponent || !gameId) {
+            if (!username || !opponent || !gameId || !symbol) {
                 console.error('Required data not found in session storage.');
                 return;
             }
 
-            // Join the game room
+            document.getElementById('playerInfo').textContent = `You (${symbol}) - ${username}`;
+            document.getElementById('opponentInfo').textContent = `${opponent} (${symbol === 'X' ? 'O' : 'X'})`;
+
             socket.emit('joinGame', { gameId, username });
-
-            socket.on('gameStart', (data) => {
-                gameId = data.gameId;
-                symbol = data.symbol;
-                turn = data.turn;
-                updateTurn();
-                console.log('Game started:', data);
-            });
-
-            socket.on('moveMade', (data) => {
-                const cell = document.querySelector(`.cell[data-index='${data.cellIndex}']`);
-                cell.textContent = data.symbol;
-                cell.classList.add('disabled');
-            });
-
-            socket.on('updateTurn', (data) => {
-                turn = data.turn;
-                updateTurn();
-                console.log('Turn update:', data);
-            });
-
-            socket.on('gameOver', (data) => {
-                document.getElementById('result').textContent = data.winner === 'tie' ? 'It\'s a tie!' : `${data.winner} wins!`;
-                document.querySelectorAll('.cell').forEach(cell => cell.classList.add('disabled'));
-            });
+            updateBoardState();
+            updateTurnIndicator();
 
             document.querySelectorAll('.cell').forEach(cell => {
                 cell.addEventListener('click', () => {
-                    const cellIndex = cell.getAttribute('data-index');
-                    if (turn === username && cell.textContent === '') {
-                        socket.emit('makeMove', { gameId, username, cellIndex });
+                    if (currentTurn === username && cell.textContent === '') {
+                        const cellIndex = cell.getAttribute('data-index');
+                        socket.emit('makeMove', { gameId, cellIndex });
                     }
                 });
             });
         });
 
-        function updateTurn() {
-            const turnDisplay = document.getElementById('turn');
-            turnDisplay.textContent = turn === sessionStorage.getItem('username') ? 'Your turn' : `${opponent}'s turn`;
+        socket.on('moveMade', (data) => {
+            const { cellIndex, symbol, turn } = data;
+            const cell = document.querySelector(`.cell[data-index="${cellIndex}"]`);
+            cell.textContent = symbol;
+            currentTurn = turn;
+            updateTurnIndicator();
+            updateBoardState();
+        });
+
+        socket.on('gameOver', (data) => {
+            const resultElement = document.getElementById('result');
+            if (data.winner === 'tie') {
+                resultElement.textContent = "It's a tie!";
+            } else {
+                resultElement.textContent = data.winner === username ? 'You win!' : 'You lose!';
+            }
+            document.querySelectorAll('.cell').forEach(cell => cell.classList.add('disabled'));
+        });
+
+        function updateTurnIndicator() {
+            const turnIndicator = document.getElementById('turnIndicator');
+            if (!turnIndicator) return; // Add this line to prevent errors if the element is not found
+            if (currentTurn === username) {
+                turnIndicator.textContent = "It's your turn!";
+                turnIndicator.style.color = 'green';
+            } else {
+                turnIndicator.textContent = "Opponent's turn";
+                turnIndicator.style.color = 'red';
+            }
+        }
+
+        function updateBoardState() {
+            document.querySelectorAll('.cell').forEach(cell => {
+                if (cell.textContent === '') {
+                    if (currentTurn === username) {
+                        cell.classList.remove('disabled');
+                    } else {
+                        cell.classList.add('disabled');
+                    }
+                } else {
+                    cell.classList.add('disabled');
+                }
+            });
         }
     </script>
 </body>

@@ -83,6 +83,10 @@ function checkWinner(moves) {
     return moves.includes(null) ? null : 'tie';
 }
 
+function logMove(gameId, player, cellIndex) {
+    console.log(`Game ${gameId}: Player ${player} moved to cell ${cellIndex}`);
+}
+
 // Routes
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -234,7 +238,7 @@ io.on('connection', (socket) => {
     
         if (!fromUserSocket) {
             console.error(`Socket for user ${from} not found.`);
-            return; // Exit early if sender's socket is not found
+            return;
         }
     
         fromUserSocket.emit('matchRequestResponse', { to, response });
@@ -244,9 +248,8 @@ io.on('connection', (socket) => {
             
             if (!targetUserSocket) {
                 console.error(`Socket for user ${to} not found.`);
-                // Inform the sender that the target user is not available
                 fromUserSocket.emit('matchRequestFailed', { to });
-                return; // Exit early if target user's socket is not found
+                return;
             }
             
             const gameId = `game_${Date.now()}`;
@@ -260,62 +263,60 @@ io.on('connection', (socket) => {
                 turn: initialTurn
             });
     
-            // Update the list of ongoing games in the lobby
             io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
-            logOngoingGames(); // Log ongoing games
+            logOngoingGames();
     
             fromUserSocket.join(gameId);
             targetUserSocket.join(gameId);
     
-            const gameData = {
+            fromUserSocket.emit('startGame', {
                 gameId,
                 symbol: 'X',
                 turn: initialTurn,
                 opponent: to
-            };
-            fromUserSocket.emit('startGame', gameData);
+            });
+            
+            targetUserSocket.emit('startGame', {
+                gameId,
+                symbol: 'O',
+                turn: initialTurn,
+                opponent: from
+            });
     
-            gameData.symbol = 'O';
-            gameData.opponent = from;
-            targetUserSocket.emit('startGame', gameData);
-    
-            // Remove both players from the online users list
             onlineUsers = onlineUsers.filter(user => user.username !== from && user.username !== to);
-            logOnlineUsers(); // Log online users
-    
-            // Notify the lobby about the updated list of online users
+            logOnlineUsers();
             io.to('gameLobby').emit('updateUserList', onlineUsers);
         }
     });
     
 
     socket.on('makeMove', (data) => {
-        const { gameId, cellIndex, symbol } = data;
-
+        const { gameId, cellIndex } = data;
         const game = ongoingGames.find(game => game.id === gameId);
-        if (!game) return;
-
-        // Validate the move
-        if (game.moves[cellIndex] !== null || game.turn !== socket.username) return;
-
+        
+        if (!game || game.moves[cellIndex] !== null || game.turn !== socket.username) {
+            return;
+        }
+    
+        const symbol = game.player1 === socket.username ? 'X' : 'O';
         game.moves[cellIndex] = symbol;
-        game.turn = game.player1 === game.turn ? game.player2 : game.player1;
-
-        // Log the move
-        console.log(`Move made in game ${gameId} by ${socket.username}: cell ${cellIndex}, symbol ${symbol}`);
-
+        logMove(gameId, socket.username, cellIndex);
+    
+        // Switch turns
+        game.turn = game.turn === game.player1 ? game.player2 : game.player1;
+    
         io.to(gameId).emit('moveMade', {
             cellIndex,
             symbol,
             turn: game.turn
         });
-
+    
         const winner = checkWinner(game.moves);
         if (winner) {
             io.to(gameId).emit('gameOver', { winner });
             ongoingGames = ongoingGames.filter(g => g.id !== gameId);
             io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
-            logOngoingGames(); // Log ongoing games
+            logOngoingGames();
         }
     });
 

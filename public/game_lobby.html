@@ -113,7 +113,12 @@
         });
 
         socket.on('startGame', (data) => {
-            const { gameId, opponent } = data;
+            const { gameId, opponent, symbol, turn } = data;
+            sessionStorage.setItem('gameId', gameId);
+            sessionStorage.setItem('opponent', opponent);
+            sessionStorage.setItem('symbol', symbol);
+            sessionStorage.setItem('turn', turn);
+            sessionStorage.setItem('username', username);
             window.location.href = `/game?gameId=${gameId}&opponent=${opponent}&username=${username}`;
         });
     </script>
