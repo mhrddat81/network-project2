@@ -100,7 +100,7 @@
                 cell.addEventListener('click', () => {
                     if (currentTurn === username && cell.textContent === '') {
                         const cellIndex = cell.getAttribute('data-index');
-                        socket.emit('makeMove', { gameId, cellIndex });
+                        socket.emit('makeMove', { gameId, cellIndex, symbol });
                     }
                 });
             });
@@ -127,7 +127,7 @@
 
         function updateTurnIndicator() {
             const turnIndicator = document.getElementById('turnIndicator');
-            if (!turnIndicator) return; // Add this line to prevent errors if the element is not found
+            if (!turnIndicator) return;
             if (currentTurn === username) {
                 turnIndicator.textContent = "It's your turn!";
                 turnIndicator.style.color = 'green';

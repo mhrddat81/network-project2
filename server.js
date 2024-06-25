@@ -224,110 +224,57 @@ io.on('connection', (socket) => {
 
     socket.on('sendMatchRequest', (data) => {
         const { from, to } = data;
-        const targetUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === to);
-        if (targetUserSocket) {
-            targetUserSocket.emit('receiveMatchRequest', { from });
-            socket.emit('matchRequestSent', { to });
+        const opponentSocket = [...io.sockets.sockets.values()].find(s => s.username === to);
+        if (opponentSocket) {
+            opponentSocket.emit('receiveMatchRequest', { from });
         }
-        console.log(`Match request sent from ${from} to ${to}`);
     });
 
     socket.on('respondMatchRequest', (data) => {
         const { from, to, response } = data;
-        const fromUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === from);
-    
-        if (!fromUserSocket) {
-            console.error(`Socket for user ${from} not found.`);
-            return;
-        }
-    
-        fromUserSocket.emit('matchRequestResponse', { to, response });
-    
-        if (response === 'accept') {
-            const targetUserSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === to);
-            
-            if (!targetUserSocket) {
-                console.error(`Socket for user ${to} not found.`);
-                fromUserSocket.emit('matchRequestFailed', { to });
-                return;
+        const requestingSocket = [...io.sockets.sockets.values()].find(s => s.username === from);
+        if (requestingSocket) {
+            requestingSocket.emit('matchRequestResponse', { to, response });
+            if (response === 'accept') {
+                const gameId = Date.now().toString();
+                ongoingGames.push({ id: gameId, player1: from, player2: to, moves: Array(9).fill(null), turn: from });
+                logOngoingGames(); // Log ongoing games
+                io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
+                requestingSocket.emit('startGame', { gameId, opponent: to, symbol: 'X', turn: from });
+                socket.emit('startGame', { gameId, opponent: from, symbol: 'O', turn: from });
             }
-            
-            const gameId = `game_${Date.now()}`;
-            const initialTurn = Math.random() < 0.5 ? from : to;
-    
-            ongoingGames.push({
-                id: gameId,
-                player1: from,
-                player2: to,
-                moves: Array(9).fill(null),
-                turn: initialTurn
-            });
-    
-            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
-            logOngoingGames();
-    
-            fromUserSocket.join(gameId);
-            targetUserSocket.join(gameId);
-    
-            fromUserSocket.emit('startGame', {
-                gameId,
-                symbol: 'X',
-                turn: initialTurn,
-                opponent: to
-            });
-            
-            targetUserSocket.emit('startGame', {
-                gameId,
-                symbol: 'O',
-                turn: initialTurn,
-                opponent: from
-            });
-    
-            onlineUsers = onlineUsers.filter(user => user.username !== from && user.username !== to);
-            logOnlineUsers();
-            io.to('gameLobby').emit('updateUserList', onlineUsers);
         }
     });
-    
+
+    socket.on('joinGame', (data) => {
+        const { gameId, username } = data;
+        socket.join(gameId);
+    });
 
     socket.on('makeMove', (data) => {
-        const { gameId, cellIndex } = data;
-        const game = ongoingGames.find(game => game.id === gameId);
-        
-        if (!game || game.moves[cellIndex] !== null || game.turn !== socket.username) {
-            return;
-        }
-    
-        const symbol = game.player1 === socket.username ? 'X' : 'O';
-        game.moves[cellIndex] = symbol;
-        logMove(gameId, socket.username, cellIndex);
-    
-        // Switch turns
-        game.turn = game.turn === game.player1 ? game.player2 : game.player1;
-    
-        io.to(gameId).emit('moveMade', {
-            cellIndex,
-            symbol,
-            turn: game.turn
-        });
-    
-        const winner = checkWinner(game.moves);
-        if (winner) {
-            io.to(gameId).emit('gameOver', { winner });
-            ongoingGames = ongoingGames.filter(g => g.id !== gameId);
-            io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
-            logOngoingGames();
+        const { gameId, cellIndex, symbol } = data;
+        const game = ongoingGames.find(g => g.id === gameId);
+        if (game && game.moves[cellIndex] === null) {
+            game.moves[cellIndex] = symbol;
+            const winner = checkWinner(game.moves);
+            game.turn = game.turn === game.player1 ? game.player2 : game.player1;
+            io.to(gameId).emit('moveMade', { cellIndex, symbol, turn: game.turn });
+            if (winner) {
+                io.to(gameId).emit('gameOver', { winner: winner === 'tie' ? 'tie' : (winner === 'X' ? game.player1 : game.player2) });
+                ongoingGames = ongoingGames.filter(g => g.id !== gameId);
+                io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
+            }
         }
     });
 
     socket.on('disconnect', () => {
         onlineUsers = onlineUsers.filter(user => user.username !== socket.username);
-        io.to('gameLobby').emit('updateUserList', onlineUsers);
         logOnlineUsers(); // Log online users
+        io.to('gameLobby').emit('updateUserList', onlineUsers);
     });
 });
 
-// Start the server
+// Start server
 server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}`);
+    console.log(`Server running on port ${port}`);
 });
