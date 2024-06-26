@@ -6,9 +6,10 @@
     <title>Tic-Tac-Toe Game</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Arial', sans-serif;
             text-align: center;
-            background-color: #f4f4f4;
+            background-color: #f0f0f0;
+            color: #333;
         }
         #game {
             display: flex;
@@ -17,22 +18,40 @@
             height: 100vh;
             flex-direction: column;
         }
+        #board-container {
+            position: relative;
+            width: 310px;
+            height: 310px;
+        }
         #board {
             display: grid;
             grid-template-columns: repeat(3, 100px);
             grid-template-rows: repeat(3, 100px);
             gap: 5px;
+            position: absolute;
+            top: 0;
+            left: 0;
         }
         .cell {
             width: 100px;
             height: 100px;
             background-color: white;
             border: 2px solid #ccc;
-            font-size: 2rem;
+            font-size: 3rem;
             display: flex;
             justify-content: center;
             align-items: center;
             cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .cell:hover {
+            background-color: #f0f0f0;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
         }
         #turnIndicator {
             font-size: 1.2em;
@@ -43,32 +62,42 @@
             background-color: #f0f0f0;
             cursor: not-allowed;
         }
-        #turn {
-            margin-top: 20px;
-            font-size: 1.2rem;
-        }
         #result {
             margin-top: 20px;
             font-size: 1.5rem;
-            color: red;
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        .player-info {
+            font-size: 1.2rem;
+            margin: 10px 0;
+        }
+        #playerInfo {
+            color: #3498db;
+        }
+        #opponentInfo {
+            color: #e67e22;
         }
     </style>
 </head>
 <body>
     <div id="game">
-        <div id="playerInfo"></div>
-        <div id="opponentInfo"></div>
+        <div id="playerInfo" class="player-info"></div>
+        <div id="opponentInfo" class="player-info"></div>
         <div id="turnIndicator"></div>
-        <div id="board">
-            <div class="cell" data-index="0"></div>
-            <div class="cell" data-index="1"></div>
-            <div class="cell" data-index="2"></div>
-            <div class="cell" data-index="3"></div>
-            <div class="cell" data-index="4"></div>
-            <div class="cell" data-index="5"></div>
-            <div class="cell" data-index="6"></div>
-            <div class="cell" data-index="7"></div>
-            <div class="cell" data-index="8"></div>
+        <div id="board-container">
+            <div id="board">
+                <div class="cell" data-index="0"></div>
+                <div class="cell" data-index="1"></div>
+                <div class="cell" data-index="2"></div>
+                <div class="cell" data-index="3"></div>
+                <div class="cell" data-index="4"></div>
+                <div class="cell" data-index="5"></div>
+                <div class="cell" data-index="6"></div>
+                <div class="cell" data-index="7"></div>
+                <div class="cell" data-index="8"></div>
+            </div>
+            <canvas id="canvas" width="310" height="310"></canvas>
         </div>
         <div id="result"></div>
     </div>
@@ -110,6 +139,7 @@
             const { cellIndex, symbol, turn } = data;
             const cell = document.querySelector(`.cell[data-index="${cellIndex}"]`);
             cell.textContent = symbol;
+            cell.style.color = symbol === 'X' ? '#3498db' : '#e67e22';
             currentTurn = turn;
             updateTurnIndicator();
             updateBoardState();
@@ -121,6 +151,9 @@
                 resultElement.textContent = "It's a tie!";
             } else {
                 resultElement.textContent = data.winner === username ? 'You win!' : 'You lose!';
+                if (data.winningCombo) {
+                    drawWinningLine(data.winningCombo);
+                }
             }
             document.querySelectorAll('.cell').forEach(cell => cell.classList.add('disabled'));
         });
@@ -130,10 +163,10 @@
             if (!turnIndicator) return;
             if (currentTurn === username) {
                 turnIndicator.textContent = "It's your turn!";
-                turnIndicator.style.color = 'green';
+                turnIndicator.style.color = '#2ecc71';
             } else {
                 turnIndicator.textContent = "Opponent's turn";
-                turnIndicator.style.color = 'red';
+                turnIndicator.style.color = '#e74c3c';
             }
         }
 
@@ -149,6 +182,33 @@
                     cell.classList.add('disabled');
                 }
             });
+        }
+
+        function drawWinningLine(combo) {
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.strokeStyle = '#2ecc71';
+            ctx.lineWidth = 5;
+
+            const cellSize = 100;
+            const gap = 5;
+            const startX = cellSize / 2 + gap;
+            const startY = cellSize / 2 + gap;
+
+            const getCoordinates = (index) => {
+                const row = Math.floor(index / 3);
+                const col = index % 3;
+                return [col * (cellSize + gap) + startX, row * (cellSize + gap) + startY];
+            };
+
+            const [start, , end] = combo;
+            const [x1, y1] = getCoordinates(start);
+            const [x2, y2] = getCoordinates(end);
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
         }
     </script>
 </body>

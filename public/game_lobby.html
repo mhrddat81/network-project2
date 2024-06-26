@@ -7,19 +7,53 @@
     <link rel="stylesheet" href="/styles.css">
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Arial', sans-serif;
+            background-color: #f0f0f0;
+            color: #333;
         }
         h1, h2 {
             text-align: center;
+            color: #2c3e50;
         }
         #userList, #ongoingGames {
             text-align: center;
             margin-top: 20px;
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
         #matchRequest {
             text-align: center;
             display: none;
             margin-top: 20px;
+            background-color: #e74c3c;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #2ecc71;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            display: none;
         }
     </style>
 </head>
@@ -38,6 +72,7 @@
         <button id="acceptMatchRequest">Accept</button>
         <button id="rejectMatchRequest">Reject</button>
     </div>
+    <!-- <div id="notification"></div> -->
     
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -59,6 +94,7 @@
                     usernameElement.style.cursor = 'pointer';
                     usernameElement.addEventListener('click', () => {
                         socket.emit('sendMatchRequest', { from: username, to: user.username });
+                        showNotification(`Match request sent to ${user.username}`);
                     });
                     userList.appendChild(usernameElement);
                 }
@@ -73,6 +109,15 @@
                 gameElement.textContent = `Game ID: ${game.id}, Players: ${game.player1} vs ${game.player2}`;
                 ongoingGames.appendChild(gameElement);
             });
+        }
+
+        function showNotification(message) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.style.display = 'block';
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
         }
 
         socket.on('updateUserList', (users) => {
@@ -108,7 +153,7 @@
         socket.on('matchRequestResponse', (data) => {
             const { to, response } = data;
             if (response === 'reject') {
-                alert(`${to} has rejected your match request.`);
+                showNotification(`${to} has rejected your match request.`);
             }
         });
 
