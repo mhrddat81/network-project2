@@ -78,6 +78,15 @@
         #opponentInfo {
             color: #e67e22;
         }
+        #gameControls {
+            margin-top: 20px;
+        }
+        #gameControls button {
+            margin: 0 10px;
+            padding: 10px 20px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -100,6 +109,10 @@
             <canvas id="canvas" width="310" height="310"></canvas>
         </div>
         <div id="result"></div>
+        <div id="gameControls" style="display: none;">
+            <button id="restartGame">Restart Game</button>
+            <button id="quitGame">Quit Game</button>
+        </div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -120,6 +133,8 @@
 
             document.getElementById('playerInfo').textContent = `You (${symbol}) - ${username}`;
             document.getElementById('opponentInfo').textContent = `${opponent} (${symbol === 'X' ? 'O' : 'X'})`;
+            document.getElementById('restartGame').addEventListener('click', restartGame);
+            document.getElementById('quitGame').addEventListener('click', quitGame);
 
             socket.emit('joinGame', { gameId, username });
             updateBoardState();
@@ -149,6 +164,8 @@
             const resultElement = document.getElementById('result');
             if (data.winner === 'tie') {
                 resultElement.textContent = "It's a tie!";
+            } else if (data.reason === 'quit') {
+                resultElement.textContent = data.winner === username ? 'You win! Opponent quit.' : 'You lose! You quit.';
             } else {
                 resultElement.textContent = data.winner === username ? 'You win!' : 'You lose!';
                 if (data.winningCombo) {
@@ -156,6 +173,20 @@
                 }
             }
             document.querySelectorAll('.cell').forEach(cell => cell.classList.add('disabled'));
+            document.getElementById('gameControls').style.display = 'block';
+        });
+
+        socket.on('gameRestarted', (newGame) => {
+            gameId = newGame.id;
+            currentTurn = newGame.turn;
+            document.querySelectorAll('.cell').forEach(cell => {
+                cell.textContent = '';
+                cell.classList.remove('disabled');
+            });
+            document.getElementById('result').textContent = '';
+            document.getElementById('gameControls').style.display = 'none';
+            updateTurnIndicator();
+            updateBoardState();
         });
 
         function updateTurnIndicator() {
@@ -184,32 +215,46 @@
             });
         }
 
-        function drawWinningLine(combo) {
-            const canvas = document.getElementById('canvas');
-            const ctx = canvas.getContext('2d');
-            ctx.strokeStyle = '#2ecc71';
-            ctx.lineWidth = 5;
-
-            const cellSize = 100;
-            const gap = 5;
-            const startX = cellSize / 2 + gap;
-            const startY = cellSize / 2 + gap;
-
-            const getCoordinates = (index) => {
-                const row = Math.floor(index / 3);
-                const col = index % 3;
-                return [col * (cellSize + gap) + startX, row * (cellSize + gap) + startY];
-            };
-
-            const [start, , end] = combo;
-            const [x1, y1] = getCoordinates(start);
-            const [x2, y2] = getCoordinates(end);
-
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
+        function restartGame() {
+            socket.emit('restartGame', { gameId, player1: username, player2: opponent });
         }
+
+        function quitGame() {
+            socket.emit('quitGame', { gameId, username });
+            returnToLobby();
+        }
+
+        function returnToLobby() {
+            socket.emit('returnToLobby', username);
+            window.location.href = '/game_lobby?username=' + encodeURIComponent(username);
+        }
+
+        // function drawWinningLine(combo) {
+        //     const canvas = document.getElementById('canvas');
+        //     const ctx = canvas.getContext('2d');
+        //     ctx.strokeStyle = '#2ecc71';
+        //     ctx.lineWidth = 5;
+
+        //     const cellSize = 100;
+        //     const gap = 5;
+        //     const startX = cellSize / 2 + gap;
+        //     const startY = cellSize / 2 + gap;
+
+        //     const getCoordinates = (index) => {
+        //         const row = Math.floor(index / 3);
+        //         const col = index % 3;
+        //         return [col * (cellSize + gap) + startX, row * (cellSize + gap) + startY];
+        //     };
+
+        //     const [start, , end] = combo;
+        //     const [x1, y1] = getCoordinates(start);
+        //     const [x2, y2] = getCoordinates(end);
+
+        //     ctx.beginPath();
+        //     ctx.moveTo(x1, y1);
+        //     ctx.lineTo(x2, y2);
+        //     ctx.stroke();
+        // }
     </script>
 </body>
 </html>
