@@ -259,8 +259,39 @@ io.on('connection', (socket) => {
             const winner = checkWinner(game.moves);
             game.turn = game.turn === game.player1 ? game.player2 : game.player1;
             io.to(gameId).emit('moveMade', { cellIndex, symbol, turn: game.turn });
+            
             if (winner) {
-                io.to(gameId).emit('gameOver', { winner: winner === 'tie' ? 'tie' : (winner === 'X' ? game.player1 : game.player2) });
+                let winnerUsername = winner === 'tie' ? null : (winner === 'X' ? game.player1 : game.player2);
+                
+                // Get player IDs from the database
+                db.query('SELECT id, username FROM players WHERE username IN (?, ?)', [game.player1, game.player2], (err, results) => {
+                    if (err) {
+                        console.error('Error fetching player IDs:', err);
+                        return;
+                    }
+                    
+                    let player1Id = results.find(r => r.username === game.player1)?.id;
+                    let player2Id = results.find(r => r.username === game.player2)?.id;
+                    let winnerId = winnerUsername ? results.find(r => r.username === winnerUsername)?.id : null;
+                    
+                    // Get current date and time
+                    const now = new Date();
+                    const formattedDateTime = now.toISOString().slice(0, 19).replace('T', ' ');
+    
+                    // Insert game data into the database
+                    db.query('INSERT INTO games (player1_id, player2_id, winner_id, game_date) VALUES (?, ?, ?, ?)',
+                        [player1Id, player2Id, winnerId, formattedDateTime],
+                        (err, result) => {
+                            if (err) {
+                                console.error('Error saving game data:', err);
+                            } else {
+                                console.log('Game data saved successfully');
+                            }
+                        }
+                    );
+                });
+    
+                io.to(gameId).emit('gameOver', { winner: winnerUsername });
                 ongoingGames = ongoingGames.filter(g => g.id !== gameId);
                 io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
             }
