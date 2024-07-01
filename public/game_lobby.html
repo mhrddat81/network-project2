@@ -107,9 +107,14 @@
             games.forEach(game => {
                 const gameElement = document.createElement('div');
                 gameElement.textContent = `Game ID: ${game.id}, Players: ${game.player1} vs ${game.player2}`;
+                gameElement.style.cursor = 'pointer';
+                gameElement.addEventListener('click', () => {
+                    window.open(`/view_game?gameId=${game.id}`, '_blank');
+                });
                 ongoingGames.appendChild(gameElement);
             });
         }
+        
 
         function showNotification(message) {
             const notification = document.getElementById('notification');

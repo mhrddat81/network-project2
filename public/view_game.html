@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Game</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            flex-direction: column;
+        }
+        h1 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        #game {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        #board-container {
+            position: relative;
+            width: 310px;
+            height: 310px;
+        }
+        #gameBoard {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-template-rows: repeat(3, 100px);
+            gap: 5px;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .cell {
+            width: 100px;
+            height: 100px;
+            background-color: white;
+            border: 2px solid #ccc;
+            font-size: 3rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: default;
+        }
+        .X {
+            color: #3498db; /* Blue for X */
+        }
+        .O {
+            color: #e74c3c; /* Red for O */
+        }
+        #result {
+            margin-top: 20px;
+            font-size: 1.5rem;
+            color: #e74c3c;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="game">
+        <h1>Viewing Game <span id="gameId"></span></h1>
+        <div id="board-container">
+            <div id="gameBoard"></div>
+        </div>
+        <div id="result"></div>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const gameId = urlParams.get('gameId');
+        document.getElementById('gameId').textContent = gameId;
+
+        const socket = io();
+        socket.emit('joinGame', { gameId });
+
+        socket.on('moveMade', (data) => {
+            const { cellIndex, symbol } = data;
+            const cell = document.getElementById(`cell-${cellIndex}`);
+            cell.textContent = symbol;
+            cell.classList.add(symbol);
+        });
+
+        socket.on('gameOver', (data) => {
+            const { winner } = data;
+            document.getElementById('result').textContent = `Game over! Winner: ${winner}`;
+        });
+
+        function generateGameBoard() {
+            const gameBoard = document.getElementById('gameBoard');
+            gameBoard.innerHTML = '';
+            for (let i = 0; i < 9; i++) {
+                const cell = document.createElement('div');
+                cell.id = `cell-${i}`;
+                cell.className = 'cell';
+                gameBoard.appendChild(cell);
+            }
+        }
+
+        generateGameBoard();
+    </script>
+</body>
+</html>

@@ -21,8 +21,8 @@ let ongoingGames = [];
 // MySQL connection
 const db = mysql.createConnection({
     host: 'localhost',
-    user: 'root', // Replace with your MySQL username
-    password: 'admin', // Replace with your MySQL password
+    user: 'root', 
+    password: 'admin', 
     database: 'tictactoe_db'
 });
 
@@ -197,6 +197,14 @@ app.get('/game', (req, res) => {
     }
 });
 
+app.get('/view_game', (req, res) => {
+    if (req.session.user) {
+        res.sendFile(path.join(__dirname, 'public', 'view_game.html'));
+    } else {
+        res.redirect('/');
+    }
+});
+
 // Logout route
 app.get('/logout', (req, res) => {
     if (req.session.user) {
@@ -246,11 +254,23 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Updated joinGame event handler
     socket.on('joinGame', (data) => {
-        const { gameId, username } = data;
+        const { gameId } = data;
         socket.join(gameId);
+
+        // Send current game state to the new viewer
+        const game = ongoingGames.find(g => g.id === gameId);
+        if (game) {
+            for (let i = 0; i < game.moves.length; i++) {
+                if (game.moves[i] !== null) {
+                    socket.emit('moveMade', { cellIndex: i, symbol: game.moves[i] });
+                }
+            }
+        }
     });
 
+    // Updated makeMove event handler
     socket.on('makeMove', (data) => {
         const { gameId, cellIndex, symbol } = data;
         const game = ongoingGames.find(g => g.id === gameId);
@@ -259,39 +279,8 @@ io.on('connection', (socket) => {
             const winner = checkWinner(game.moves);
             game.turn = game.turn === game.player1 ? game.player2 : game.player1;
             io.to(gameId).emit('moveMade', { cellIndex, symbol, turn: game.turn });
-            
             if (winner) {
-                let winnerUsername = winner === 'tie' ? null : (winner === 'X' ? game.player1 : game.player2);
-                
-                // Get player IDs from the database
-                db.query('SELECT id, username FROM players WHERE username IN (?, ?)', [game.player1, game.player2], (err, results) => {
-                    if (err) {
-                        console.error('Error fetching player IDs:', err);
-                        return;
-                    }
-                    
-                    let player1Id = results.find(r => r.username === game.player1)?.id;
-                    let player2Id = results.find(r => r.username === game.player2)?.id;
-                    let winnerId = winnerUsername ? results.find(r => r.username === winnerUsername)?.id : null;
-                    
-                    // Get current date and time
-                    const now = new Date();
-                    const formattedDateTime = now.toISOString().slice(0, 19).replace('T', ' ');
-    
-                    // Insert game data into the database
-                    db.query('INSERT INTO games (player1_id, player2_id, winner_id, game_date) VALUES (?, ?, ?, ?)',
-                        [player1Id, player2Id, winnerId, formattedDateTime],
-                        (err, result) => {
-                            if (err) {
-                                console.error('Error saving game data:', err);
-                            } else {
-                                console.log('Game data saved successfully');
-                            }
-                        }
-                    );
-                });
-    
-                io.to(gameId).emit('gameOver', { winner: winnerUsername });
+                io.to(gameId).emit('gameOver', { winner: winner === 'tie' ? 'tie' : (winner === 'X' ? game.player1 : game.player2) });
                 ongoingGames = ongoingGames.filter(g => g.id !== gameId);
                 io.to('gameLobby').emit('updateOngoingGames', ongoingGames);
             }
@@ -299,13 +288,15 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        onlineUsers = onlineUsers.filter(user => user.username !== socket.username);
-        logOnlineUsers(); // Log online users
-        io.to('gameLobby').emit('updateUserList', onlineUsers);
+        if (socket.username) {
+            onlineUsers = onlineUsers.filter(user => user.username !== socket.username);
+            io.to('gameLobby').emit('updateUserList', onlineUsers);
+            logOnlineUsers(); // Log online users
+        }
     });
 });
 
-// Start server
+// Start the server
 server.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+    console.log(`Server running on http://localhost:${port}`);
 });
